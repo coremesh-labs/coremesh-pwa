@@ -1,5 +1,5 @@
-Spezifikation: Ablageformat cm1 – Fassung 1 (2026-11-06)
-=========================================================
+Spezifikation: Ablageformat cm1 – Fassung 1 (2026-11-06, Ergänzung 1: Modulschlüssel)
+=====================================================================================
 Für den Bau der PWA (anderer Rechner) und des Exports. Hintergrund und Begründungen:
 Ablage_Dateiformat_Konzept.txt; Abläufe: Ablage_Ablauf_Konzept.txt; File Explorer:
 Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ heißt: sonst Datei verwerfen.
@@ -12,6 +12,8 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   IDs: 16 Zufallsbytes, base32 (RFC 4648) klein, ohne „=“ → 26 Zeichen, z. B. 7q2kx3…
   Zeitpunkte: RFC 3339 in UTC, z. B. "2026-11-06T14:03:00Z"; Tage: "2026-11-06".
   Texte: UTF-8. JSON: unbekannte Felder ignorieren (Erweiterungen kommen dazu, nichts wird umgedeutet).
+  Leere Werte: der Export lässt leere Felder weg (kein null). Der Leser behandelt null wie ein
+    fehlendes Feld (Text "", Liste [], Objekt nicht vorhanden) und bricht daran nicht ab.
   HTTP: nur GET. i/ ohne Zwischenspeicher holen (cache: "no-store"); o/, m/ dürfen dauerhaft
     zwischengespeichert werden. Die Ablage liefert CORS für die Adresse der PWA.
 
@@ -21,7 +23,11 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   ds:<ablage-id>:<n>       Dataset-Schlüssel, age      ebenso
   srv-sig:<n>              Signatur des Servers, Ed25519  öffentlich: base64url ohne „=“ (32 Byte)
   srv-box:<n>              Rückkanal des Servers, age  öffentlich "age1…"
-  <uid> = zufällige ID des Teilnehmers, <ablage-id> = ID des Datasets, <n> = Fassung ab 1.
+  mod:<bukr>.<modul>:<n>   Modulschlüssel, age         ebenso; je Modul eigener Schlüssel
+  <uid> = zufällige ID des Teilnehmers, <ablage-id> = ID des Datasets, <n> = Fassung ab 1,
+  <modul> = id im Manifest, <bukr> = Buchungskreis. Den Modulschlüssel hat nur, wer das Modul
+  bekommt (Rolle); verliert jemand es, verschlüsselt der Export das Paket mit der nächsten
+  Fassung neu (neuer Hash, neue Modulliste).
   Verschlüsselung: age v1 (https://age-encryption.org/v1), Binärform (nicht ASCII-Armor),
     genau ein Empfänger: der öffentliche Teil des Schlüssels aus „key“.
     Bibliotheken: Go filippo.io/age; Browser npm age-encryption (typage).
@@ -39,7 +45,7 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   Danach darf nichts mehr kommen.
   Inhalt:
     header.key nicht leer → body = age-Datei; entschlüsselt = gepackte Daten
-    header.key leer       → body = gepackte Daten (nur kind modules und module)
+    header.key leer       → body = gepackte Daten (nur kind modules)
     gepackt: packing "gzip" (RFC 1952; Browser DecompressionStream("gzip")) bzw. "none".
   Kopffelder:
     format        "cm1"                                         muss
@@ -56,7 +62,7 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
     start    application/vnd.coremesh.start+json;v=1      key user:…   signiert
     dataset  application/vnd.coremesh.dataset+json;v=1    key ds:…     signiert
     modules  application/vnd.coremesh.modules+json;v=1    key ""       signiert
-    module   application/vnd.coremesh.module+zip;v=1      key ""       nicht signiert (Hash in der Liste)
+    module   application/vnd.coremesh.module+zip;v=1      key mod:…    nicht signiert (Hash in der Liste)
     data     beliebig                                     key ds:…     nicht signiert (Hash im Index)
   Parameter ;v=N im Content-Type: Fassung des Schemas. Unbekanntes N → Datei nicht verwenden,
     Hinweis „App aktualisieren“.
@@ -85,9 +91,9 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
         "signatur": [{"key": "srv-sig:1", "public": "…", "gueltig_ab": "2026-11-06"},
                      {"key": "srv-sig:2", "public": "…", "gueltig_ab": "2027-01-01",
                       "signiert_von": "srv-sig:1", "signatur": "<base64url>"}],
-        "rueckkanal": {"key": "srv-box:1", "public": "age1…"},
-        "zugang": null},
-      "schluessel": [{"key": "ds:7q2k…:1", "secret": "AGE-SECRET-KEY-1…", "dataset": "7q2k…", "gueltig_ab": "2026-11-06"}],
+        "rueckkanal": {"key": "srv-box:1", "public": "age1…"}},
+      "schluessel": [{"key": "ds:7q2k…:1", "secret": "AGE-SECRET-KEY-1…", "dataset": "7q2k…", "gueltig_ab": "2026-11-06"},
+                     {"key": "mod:2000.explorer:1", "secret": "AGE-SECRET-KEY-1…", "modul": "explorer", "gueltig_ab": "2026-11-06"}],
       "datasets": [{"id": "7q2k…", "name": "Energie-Monitor Gretchen 2026-10",
         "sichtart": {"code": "VERBRAUCHSINFO", "name": "Energie-Monitor"},
         "sicht": {"id": "…", "name": "Energie-Monitor Faustgasse 1"},
@@ -97,10 +103,12 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
       "modules": ["explorer"],
       "hinweise": []
     }
+    modules: die Module, die der Teilnehmer bekommt (ihre Schlüssel stehen in schluessel). Ein
+      Dataset, dessen modul nicht darin steht, kann die App nicht anzeigen (Hinweis zeigen).
     Signatur eines neuen Signaturschlüssels: Ed25519 mit „signiert_von“ über den UTF-8-Text
       "cm1-srv-sig\n" + key + "\n" + public + "\n" + gueltig_ab. Übernehmen nur, wenn gültig.
     Leere Listen datasets und schluessel = gesperrt: alles Lokale löschen.
-    zugang: Zugang zum Rückkanal (später), sonst null.
+    zugang: Zugang zum Rückkanal (später); fehlt bis dahin.
   5.2 Dataset-Index
     {
       "id": "7q2k…", "name": "Steuerunterlagen 2026", "fassung": 5, "stand": 2,
@@ -112,25 +120,29 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
         "titel": "Rechnung Strom März", "datum": "2026-03-01",
         "art": {"code": "ER", "name": "Eingangsrechnung"}, "partner": {"id": "…", "name": "Stadtwerke Auerbach"},
         "content_type": "application/pdf", "groesse": 183422, "key": "ds:7q2k…:1",
-        "neu": false, "kennzeichen": null, "ersetzt_durch": null, "ref": "o/3f9a…"}],
-      "teile": [],
+        "neu": false, "ref": "o/3f9a…"}],
       "modul": "explorer"
     }
-    kennzeichen: null oder {"code": "CANCELLED", "name": "storniert", "notiz": "…", "am": "2026-10-02"}.
+    kennzeichen: fehlt oder {"code": "CANCELLED", "name": "storniert", "notiz": "…", "am": "2026-10-02"}.
+    Ebenso fehlen leer: datum, art, partner, ersetzt_durch, zeitraum, gliederung, teile.
     ref "" = Element ohne Datei (nur im Verzeichnis). ersetzt_durch = nr eines Elements.
     teile: IDs weiterer Datasets (zusammengesetzte Sicht); deren Schlüssel stehen in der Startdatei.
   5.3 Modulliste
     {"fassung": 4, "erstellt": "…", "module": [
-      {"id": "explorer", "name": "Dateien", "version": "1.0.0", "ref": "",
+      {"id": "explorer", "name": "Dateien", "version": "1.0.0", "ref": "m/4b07…", "key": "mod:2000.explorer:1",
        "content_types": ["application/vnd.coremesh.dataset+json"], "sichtarten": ["*"], "rueckkanal": []},
-      {"id": "vorgaenge", "name": "Vorgänge", "version": "0.1.0", "ref": "m/9c1e…",
+      {"id": "vorgang", "name": "Vorgänge", "version": "0.1.0", "ref": "m/9c1e…", "key": "mod:2000.vorgang:3",
        "content_types": ["application/vnd.coremesh.process+json"], "sichtarten": ["VORGANG"],
        "rueckkanal": ["VORGANG_NOTIZ"]}]}
-    ref "" = in der PWA eingebaut.
+    Alle Module kommen über den Server, auch der File Explorer (mitgeliefert im Export). Die
+    Liste ist signiert und unverschlüsselt; sie nennt alle aktiven Module, laden kann ein Modul
+    nur, wer seinen Schlüssel hat. key: Schlüssel, mit dem m/… verschlüsselt ist (zur Anzeige
+    „nicht freigegeben“, die Prüfung nimmt den key im Kopf der Datei).
   5.4 Modulpaket (zip)
-    manifest.json: {id, name, version, einstieg: "index.html" bzw. "main.wasm", content_types,
-      sichtarten, rueckkanal, api: 1} – muss zum Eintrag der Modulliste passen; dazu die Dateien
-      des Moduls.
+    manifest.json: {id, name, version, einstieg: "<stem>.js", content_types, sichtarten,
+      rueckkanal, api: 1} – muss zum Eintrag der Modulliste passen; dazu <stem>.js und
+      <stem>_bg.wasm (wasm-bindgen, Target web). id: a–z, 0–9, - und _, höchstens 32 Zeichen.
+      Der Export nimmt nur Pakete mit api ≤ der api der mitgelieferten App an.
   5.5 Objektdaten Vorgang (application/vnd.coremesh.process+json;v=1)
     {"id": "AF-2026-0001", "typ": {"code": "KLAERUNG", "name": "Klärung"}, "titel": "…",
      "status": {"code": "OPEN", "name": "offen"}, "eroeffnet": "2026-10-01", "abgeschlossen": null,
@@ -149,9 +161,10 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   und holt die Startdatei. Als QR-Code im Einrichtungsbrief (Byte-Modus).
 
 7. Prüfdateien (Testvektoren)
-  Im Export unter cmd/plugins/export/internal/export/testdata/cm1/:
+  In coremesh-erp unter pkg/cm1/testdata/ (Paket cm1, vom Export benutzt; neu erzeugen mit
+  CM1_UPDATE=1 go test ./pkg/cm1/):
     keys.json     feste Prüfschlüssel (Benutzer, Dataset Fassung 1 und 2, Signatur 1 und 2)
-    *.cm1         Dateien, unter ihrem Pfad (i/…, o/…)
+    ablage/…      Dateien unter ihrem Pfad (i/…, o/…)
     expect.json   je Datei: {pfad, gueltig, fehler, inhalt_sha256, content_type}
   Fälle: data PDF none; data JSON gzip; Index; Startdatei; Startdatei mit neuem Signaturschlüssel;
     gesperrte Startdatei; Modulliste; falscher Hash (E_HASH); falsche Signatur (E_SIG); unter
