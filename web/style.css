@@ -65,6 +65,13 @@ h1 { font-size: 1.5rem; margin: 0 0 4px; }
 h2 { font-size: 1.15rem; margin: 20px 0 8px; }
 .sub { color: var(--muted); margin: 0; font-size: 0.95rem; }
 .top { margin-bottom: 12px; }
+.top h1 { margin-bottom: 2px; overflow-wrap: anywhere; }
+.kontext { margin: 0 0 2px; font-size: 1.05rem; }
+/* Startseite: nur Kopf und Module; im Modul: Kopfzeile „‹ Start“ statt Kopf und Kacheln */
+.modulkopf { display: none; align-items: center; gap: 12px; margin-bottom: 12px; }
+.modulkopf .titel { font-weight: 600; }
+.home.im-modul > .modulkopf { display: flex; }
+.home.im-modul > header.top, .home.im-modul > .tiles, .home.im-modul > .hinweis { display: none; }
 .status { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; border-radius: var(--radius); }
 .hinweis { background: var(--neu-bg); color: var(--neu); padding: 8px 12px; border-radius: var(--radius); }
 .leer, .laden { color: var(--muted); }

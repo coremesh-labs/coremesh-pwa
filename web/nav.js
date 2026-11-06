@@ -4,11 +4,11 @@
 // Jedes Öffnen einer Ebene (Dataset, Vorgang, Dokument) legt beim Antippen einen Eintrag im
 // Verlauf an (Chrome überspringt Einträge ohne Antippen). „Zurück“ betätigt dann den passenden
 // Knopf der Oberfläche: zuerst das Dokumentfenster schließen, sonst den innersten sichtbaren
-// Knopf „‹ Übersicht“ bzw. „‹ Vorgänge“. Schließt man selbst über diese Knöpfe, wird der
+// Knopf „‹ Übersicht“, „‹ Vorgänge“ bzw. „‹ Start“. Schließt man selbst über diese Knöpfe, wird der
 // Eintrag wieder entfernt – so bleibt der Verlauf so tief wie die Ansicht.
 // Escape schließt am PC das Dokumentfenster.
 
-const OPEN = new Set(['open', 'show', 'open-doc']); // öffnen eine Ebene
+const OPEN = new Set(['modul', 'open', 'show', 'open-doc']); // öffnen eine Ebene
 const CLOSE = new Set(['close', 'close-preview', 'back']); // schließen eine Ebene
 const OVERLAY = ['.detail [data-act="close"]', '.vorschau [data-act="close-preview"]'];
 

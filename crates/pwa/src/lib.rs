@@ -75,10 +75,19 @@ fn show_home(st: &Shared, root: &HtmlElement) {
         .as_ref()
         .and_then(|st| st.teilnehmer.get("name").and_then(|v| v.as_str()).map(|x| x.to_string()))
         .unwrap_or_else(|| s.setup.name.clone());
+    // Kopf: Name des Teilnehmers, darunter der Zusammenhang (z. B. Haus und Wohnung) und der Stand
+    let kontext = s
+        .start
+        .as_ref()
+        .and_then(|st| st.teilnehmer.get("kontext").and_then(|v| v.as_str()).map(|x| x.to_string()))
+        .unwrap_or_default();
     let mut html = format!(
-        "<main class=\"home\"><header class=\"top\"><h1>Ablage</h1><p class=\"sub\">{}{}</p></header>",
+        "<main class=\"home\"><header class=\"top\"><h1>{}</h1>{}{}</header>\
+         <nav class=\"modulkopf\"><button class=\"ghost\" data-act=\"back\" data-shell=\"1\">‹ Start</button>\
+         <span class=\"titel\"></span></nav>",
         esc(&name),
-        if stand.is_empty() { String::new() } else { format!(" · {}", esc(&stand)) }
+        if kontext.is_empty() { String::new() } else { format!("<p class=\"kontext\">{}</p>", esc(&kontext)) },
+        if stand.is_empty() { String::new() } else { format!("<p class=\"sub\">{}</p>", esc(&stand)) }
     );
     for m in &s.meldungen {
         html.push_str(&format!("<p class=\"status\" role=\"status\">{}</p>", esc(m)));
@@ -112,6 +121,10 @@ fn install_home_events(st: &Shared, root: &HtmlElement) {
     let root2 = root.clone();
     let on_click = Closure::<dyn FnMut(web_sys::Event)>::new(move |ev: web_sys::Event| {
         let Some(target) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
+        if let Ok(Some(_)) = target.closest("[data-act=back][data-shell]") {
+            close_module(&root2);
+            return;
+        }
         let Ok(Some(el)) = target.closest("[data-act=modul]") else { return };
         let id = el.get_attribute("data-id").unwrap_or_default();
         wasm_bindgen_futures::spawn_local(open_module(st.clone(), root2.clone(), id));
@@ -122,11 +135,14 @@ fn install_home_events(st: &Shared, root: &HtmlElement) {
 
 /// Modul laden (einmal je Sitzung) und in den Bereich „#modul“ starten.
 async fn open_module(st: Shared, root: HtmlElement, id: String) {
-    let Ok(Some(area)) = root.query_selector("#modul") else { return };
-    let area: HtmlElement = match area.dyn_into() {
-        Ok(a) => a,
-        Err(_) => return,
-    };
+    let Some(area) = fresh_area(&root) else { return };
+    let titel = st
+        .borrow()
+        .modules
+        .as_ref()
+        .and_then(|m| m.module.iter().find(|e| e.id == id).map(|e| e.name.clone()))
+        .unwrap_or_default();
+    set_module_view(&root, Some(&titel));
     area.set_inner_html("<p class=\"laden\">Modul wird geladen …</p>");
 
     let cached = LOADED.with(|l| l.borrow().get(&id).cloned());
@@ -157,5 +173,41 @@ async fn open_module(st: Shared, root: HtmlElement, id: String) {
     let host = module::make_host(&st, &id);
     if let Err(e) = module::mount(&ns, &host, &area).await {
         area.set_inner_html(&format!("<p class=\"status\">Modul-Fehler: {}</p>", esc(&e)));
+    }
+}
+
+/// Neuer, leerer Bereich „#modul“: ein Modul hängt seine Ereignisse an den Bereich –
+/// ein frischer Bereich verhindert doppelte Ereignisse beim erneuten Öffnen.
+fn fresh_area(root: &HtmlElement) -> Option<HtmlElement> {
+    let old = root.query_selector("#modul").ok()??;
+    let doc = web_sys::window()?.document()?;
+    let area: HtmlElement = doc.create_element("div").ok()?.dyn_into().ok()?;
+    area.set_id("modul");
+    area.set_class_name("modul");
+    old.replace_with_with_node_1(&area).ok()?;
+    Some(area)
+}
+
+/// Startseite (nur Kacheln) bzw. Seite eines Moduls (Kopfzeile „‹ Start“ und Name des Moduls).
+fn set_module_view(root: &HtmlElement, titel: Option<&str>) {
+    let Ok(Some(main)) = root.query_selector("main.home") else { return };
+    match titel {
+        Some(t) => {
+            let _ = main.class_list().add_1("im-modul");
+            if let Ok(Some(el)) = main.query_selector(".modulkopf .titel") {
+                el.set_text_content(Some(t));
+            }
+        }
+        None => {
+            let _ = main.class_list().remove_1("im-modul");
+        }
+    }
+}
+
+fn close_module(root: &HtmlElement) {
+    let _ = fresh_area(root);
+    set_module_view(root, None);
+    if let Some(w) = web_sys::window() {
+        w.scroll_to_with_x_and_y(0.0, 0.0);
     }
 }
