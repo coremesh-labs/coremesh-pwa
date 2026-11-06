@@ -231,3 +231,21 @@ img.preview { height: auto; object-fit: contain; }
 .detail .preview, .vg .vorschau .preview { height: auto; min-height: 60vh; flex: 1 0 auto; }
 .detail .pdfseiten, .vg .vorschau .pdfseiten { max-height: none; min-height: 0; flex: none; }
 body:has(.detail, .vg .vorschau) { overflow: hidden; }
+
+/* Modul „Mietverhältnis“ (mieter) */
+.mieter .top h2 { margin: 6px 0 0; }
+.mieter .karten { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.mieter .karte { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 14px; }
+.mieter .aushaenge { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.mieter .aushang { padding: 10px 12px; border-left: 4px solid var(--line); border-radius: 6px; background: var(--bg); display: flex; flex-direction: column; gap: 2px; }
+.mieter .aushang.aktuell { border-left-color: var(--warn); background: var(--warn-bg); }
+.mieter .aushang p { margin: 4px 0 0; }
+.mieter table.miete { width: 100%; border-collapse: collapse; }
+.mieter table.miete td, .mieter table.miete th { padding: 6px 0; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+.mieter table.miete .num { text-align: right; white-space: nowrap; padding-left: 12px; }
+.mieter table.miete tbody tr:first-child td { border-top: none; }
+.mieter .pos { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+.mieter .wege { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.mieter .wege a { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); text-decoration: none; }
+.mieter .notdienst .wege a.tel { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+.mieter .beteiligte .titel { font-weight: 600; }
