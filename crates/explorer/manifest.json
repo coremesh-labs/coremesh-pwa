@@ -1,0 +1,10 @@
+{
+  "id": "explorer",
+  "name": "Dateien",
+  "version": "1.0.0",
+  "einstieg": "explorer.js",
+  "content_types": ["application/vnd.coremesh.dataset+json"],
+  "sichtarten": ["*"],
+  "rueckkanal": [],
+  "api": 1
+}

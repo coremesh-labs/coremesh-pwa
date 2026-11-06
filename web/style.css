@@ -1,0 +1,155 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #1c2330;
+  --muted: #5d6878;
+  --card: #ffffff;
+  --line: #d9dee6;
+  --accent: #1d4f6b;
+  --accent-fg: #ffffff;
+  --warn: #8a4b00;
+  --warn-bg: #fff1dc;
+  --ok: #1d6b3a;
+  --ok-bg: #e2f4e8;
+  --neu: #0b6bcb;
+  --neu-bg: #e3efff;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14181f;
+    --fg: #e8ecf2;
+    --muted: #9aa5b5;
+    --card: #1d2430;
+    --line: #2f3a4a;
+    --accent: #6fb3d6;
+    --accent-fg: #0d1218;
+    --warn: #ffc27a;
+    --warn-bg: #3a2c14;
+    --ok: #8fe0a8;
+    --ok-bg: #173223;
+    --neu: #8cc2ff;
+    --neu-bg: #172a44;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #14181f;
+  --fg: #e8ecf2;
+  --muted: #9aa5b5;
+  --card: #1d2430;
+  --line: #2f3a4a;
+  --accent: #6fb3d6;
+  --accent-fg: #0d1218;
+  --warn: #ffc27a;
+  --warn-bg: #3a2c14;
+  --ok: #8fe0a8;
+  --ok-bg: #173223;
+  --neu: #8cc2ff;
+  --neu-bg: #172a44;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+.app, main { padding: 16px; max-width: 980px; margin: 0 auto; }
+
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 20px 0 8px; }
+.sub { color: var(--muted); margin: 0; font-size: 0.95rem; }
+.top { margin-bottom: 12px; }
+.status { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; border-radius: var(--radius); }
+.hinweis { background: var(--neu-bg); color: var(--neu); padding: 8px 12px; border-radius: var(--radius); }
+.leer, .laden { color: var(--muted); }
+
+button, select, input { font: inherit; color: inherit; }
+button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  cursor: pointer;
+}
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.ghost { background: transparent; }
+button.link { border: none; background: none; color: var(--accent); padding: 0; min-height: 0; text-decoration: underline; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--neu); outline-offset: 2px; }
+
+input[type="search"], input[type="date"], select {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  max-width: 100%;
+}
+input[type="search"] { width: 100%; }
+
+.chk { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.chk input { width: 20px; height: 20px; }
+
+label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Hülle */
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin: 16px 0; }
+.tile { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 16px; min-height: 96px; }
+.tile span { color: var(--muted); font-size: 0.9rem; }
+.modul { margin-top: 8px; }
+.einrichten h1 { margin-top: 24px; }
+
+/* Explorer */
+.xf .toolbar { display: grid; gap: 10px; margin-bottom: 12px; }
+.xf .toolbar .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.folders { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { min-height: 40px; padding: 6px 12px; border-radius: 999px; font-size: 0.92rem; }
+.chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+.cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.card { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 14px; min-height: 96px; }
+.card span { color: var(--muted); font-size: 0.9rem; }
+.card strong { font-size: 1.02rem; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.actions > span { color: var(--muted); margin-right: auto; }
+
+.rows { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.row { display: flex; align-items: stretch; border-top: 1px solid var(--line); }
+.row:first-child { border-top: none; }
+.row > input[type="checkbox"] { margin: 0 4px 0 14px; width: 20px; height: 20px; align-self: center; flex: none; }
+.rowbtn { flex: 1; min-width: 0; border: none; border-radius: 0; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: transparent; }
+.row.current { background: var(--neu-bg); }
+.row.flagged .titel { text-decoration: line-through; color: var(--muted); }
+.row.flagged .meta { opacity: 0.8; }
+.titel { font-weight: 600; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 0.9rem; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.badge { display: inline-block; font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.badge.neu { background: var(--neu-bg); color: var(--neu); border-color: transparent; }
+.badge.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.badge.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+
+.detail { margin-top: 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.detail h2 { margin-top: 0; overflow-wrap: anywhere; }
+.detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 12px; }
+.detail dt { color: var(--muted); }
+.detail dd { margin: 0; overflow-wrap: anywhere; }
+.preview { width: 100%; height: min(70vh, 720px); border: 1px solid var(--line); border-radius: var(--radius); background: #fff; margin-bottom: 12px; }
+img.preview { height: auto; object-fit: contain; }
+.nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+/* Am Telefon: kleinere Abstände, Tabellenzeilen bleiben Listen */
+@media (max-width: 600px) {
+  .detail dl { grid-template-columns: 1fr; }
+  .detail dt { margin-top: 6px; }
+  .actions > span { width: 100%; }
+}

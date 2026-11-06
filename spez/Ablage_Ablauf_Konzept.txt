@@ -1,0 +1,126 @@
+Konzept: Abläufe in der PWA mit den Dateien der Ablage – Fassung 1 (2026-11-06)
+==============================================================================
+Gehört zu Ablage_Dateiformat_Konzept.txt (Dateiarten, Umschlag, Schlüssel) und
+PWA_Verteilung_Konzept.txt (PWA, Rückkanal). Hier steht, wie die PWA die Dateien liest,
+prüft, speichert und anzeigt – Schritt für Schritt je Dateiart. Bytes, JSON und Fehlercodes:
+Ablage_Format_Spezifikation.txt; File Explorer: Ablage_Explorer_Modul_Konzept.txt.
+
+0. Hülle und Module (Entscheidung 2026-11-06)
+  Die Startseite zeigt Module; der File Explorer ist eines davon. Dazu bietet die Hülle
+  „Öffnen mit“ nach Content-Type als Dienst an.
+  Hülle (bringt die PWA mit):
+  - Einrichten (QR), Startdatei, Schlüsselbund, Vertrauen (Signaturschlüssel des Servers)
+  - Dateien holen, Hash bzw. Signatur prüfen, entschlüsseln, auspacken, lokal speichern
+  - Startseite: Module mit ihren Datasets, Hinweise, „neu seit dem letzten Besuch“
+  - „Öffnen mit“: Modul, das sich für den Content-Type meldet → sonst Browser (PDF, Bild)
+    → sonst Download
+  - Rückkanal: Nachricht verschlüsseln (Schlüssel des Servers), signieren, senden
+  - Module laden, prüfen, abgeschottet starten
+  Module (nachgeladen; der File Explorer wird mitgeliefert, Schnittstelle wie alle anderen):
+  - File Explorer: Datasets als Ordner, Suche, Filter neu/Kennzeichen, Download einzeln und als zip
+    (eigenes Konzept: Ablage_Explorer_Modul_Konzept.txt)
+  - später: Vorgänge/Tickets, Wohnungsübergabe, Zählerstände; Anzeigen eigener Content-Types
+  Grundsatz: Die Schlüssel bleiben in der Hülle. Ein Modul bekommt nur entschlüsselte Daten
+  der Datasets, die ihm zugeordnet sind (Feld „modul“ im Dataset der Startdatei), und bittet
+  die Hülle darum („Index von Dataset X“, „öffne o/…“). Ein Modul sieht nie einen Schlüssel,
+  nie die Startdatei und nie fremde Datasets.
+
+1. Startdatei: was die PWA bei jedem Start damit macht
+  Voraussetzung: Die PWA hat den privaten Benutzerschlüssel, den Link (ID) der Startdatei und
+  den Signaturschlüssel des Servers (Einrichten). Bei jedem Start, und wenn die App wieder in
+  den Vordergrund kommt:
+  1. Holen: GET i/<start-id> ohne Zwischenspeicher des Browsers. Offline bzw. Fehler: weiter
+     mit der zuletzt gültigen Startdatei aus dem lokalen Speicher, Hinweis „Stand vom …“.
+  2. Kopf lesen (Klartext): format cm1, kind start, content_type start+json, key = eigener
+     Benutzerschlüssel (Name und Fassung). Passt etwas nicht: verwerfen (Hinweis „neu einrichten“
+     nur, wenn der Schlüsselname nicht mehr stimmt).
+  3. Signatur prüfen mit einem vertrauten Signaturschlüssel des Servers. Ungültig: verwerfen,
+     weiter mit der zuletzt gültigen (Schritt 1).
+  4. Entschlüsseln mit dem privaten Benutzerschlüssel, entpacken (gzip/none), JSON lesen.
+  5. Fassung prüfen: kleiner als die gespeicherte → verwerfen (alte Datei wieder eingespielt);
+     gleich → nichts geändert, weiter mit Schritt 10; größer → übernehmen.
+  6. Vertrauen nachführen: neue Signaturschlüssel des Servers nur übernehmen, wenn sie mit
+     einem schon vertrauten signiert sind; Schlüssel für den Rückkanal ersetzen.
+  7. Schlüsselbund abgleichen: Der lokale Schlüsselbund ist genau die Liste „schluessel“.
+     Neue aufnehmen; was fehlt, löschen – samt der Indizes und Datendateien im lokalen
+     Speicher, die nur mit diesem Schlüssel lesbar waren (Berechtigung entzogen).
+  8. Datasets abgleichen mit der lokalen Liste:
+     - neu: aufnehmen, Index sofort holen (klein);
+     - entfallen: aus der Liste und aus dem lokalen Speicher löschen;
+     - geändert (stand bzw. geliefert neuer): Index neu holen; Datendateien nicht – die holt
+       die PWA erst beim Öffnen bzw. Herunterladen (o/ ändert sich nie, einmal geholt bleibt
+       es offline lesbar).
+  9. Module abgleichen: i/modules holen und Signatur prüfen; fehlende Module m/<sha256> holen,
+     Hash prüfen, ins Menü; Module, die keine Berechtigung mehr braucht, entfernen.
+  10. Startseite zeigen: Hinweise, Datasets nach Sicht gegliedert, „neu seit dem letzten
+      Besuch“ (aus neu_seit und dem Zeitpunkt des letzten Besuchs), Freigabe bis.
+  11. Merken: gültige Startdatei, ihre Fassung, Zeitpunkt des Besuchs.
+  Lokaler Speicher: IndexedDB (Startdatei, Schlüsselbund, Indizes, geholte Datendateien,
+  Module). Der private Benutzerschlüssel nach Möglichkeit nicht auslesbar (WebCrypto),
+  sonst verschlüsselt mit einer PIN des Geräts (Frage E in Ablage_Dateiformat_Konzept.txt).
+
+2. Dataset-Index öffnen (Hülle, im Auftrag eines Moduls)
+  Auslöser: Das Modul fragt die Hülle nach dem Index eines Datasets (z. B. der File Explorer,
+  wenn man einen Ordner der Startseite öffnet), oder die Hülle holt ihn vorab (Schritt 1.8).
+  1. Darf das Modul? Das Dataset muss in der Startdatei stehen und dem Modul zugeordnet sein.
+  2. Lokal vorhanden und Stand gleich dem in der Startdatei → lokale Fassung, fertig.
+  3. Sonst holen: GET i/<dataset-id>. Offline → lokale Fassung mit Hinweis „Stand vom …“;
+     keine lokale → „nicht offline verfügbar“.
+  4. Kopf prüfen: kind dataset, content_type dataset+json, key ist einer der Schlüssel dieses
+     Datasets im Schlüsselbund (sonst: „keine Berechtigung“, nichts weiter laden).
+  5. Signatur des Servers prüfen; ungültig → verwerfen, lokale Fassung behalten.
+  6. Entschlüsseln, auspacken, JSON lesen; Stand muss zum Stand in der Startdatei passen
+     (älter → verwerfen).
+  7. Zusammengesetzte Sichten: für jedes Dataset in „teile“ dieselben Schritte; nur Teile,
+     zu denen ein Schlüssel im Bund ist, sonst Hinweis „Teil ohne Berechtigung“.
+  8. Lokal speichern und an das Modul geben: Kopfdaten, Gliederung, Elemente (ohne Schlüssel).
+     Elemente, deren o/-Datei schon lokal liegt, sind als „offline verfügbar“ markiert.
+  Was der File Explorer daraus macht:
+  - Ordner nach „gliederung“, darin die Elemente in der Reihenfolge „nr“; Spalten Titel,
+    Datum, Art, Partner, Größe; Markierung „neu“ und Kennzeichen (storniert, ersetzt, ohne
+    Datei – letztere ohne Öffnen/Download).
+  - Suche über Titel, Partner, Art; Filter „nur neu“, „ohne Gekennzeichnete“.
+  - Auswahl: einzeln, Ordner, alles → Öffnen bzw. Herunterladen (Abschnitt 3).
+
+3. Datendatei anzeigen und herunterladen (Hülle)
+  1. Element aus dem Index: ref o/<sha256>, content_type, Name (ordner/datei).
+  2. Lokal vorhanden → nehmen. Sonst GET o/<sha256>; Hash der ganzen Datei prüfen (falsch →
+     verwerfen, Fehler melden, nicht anzeigen).
+  3. Kopf prüfen: kind data, key gleich dem key des Elements im Index und im Schlüsselbund,
+     content_type gleich dem im Index (sonst Fehler).
+  4. Entschlüsseln, auspacken; lokal speichern (o/ ändert sich nie – bleibt gültig bis zum
+     Löschen des Schlüssels bzw. des Datasets, Abschnitt 1.7/1.8).
+  5. Öffnen mit, nach content_type:
+     - ein Modul, das sich im Manifest für den Typ meldet und dem das Dataset zugeordnet
+       werden darf (z. B. application/vnd.coremesh.process+json → Modul Vorgänge);
+     - sonst der Browser, wenn er den Typ zeigen kann (application/pdf, image/*, text/plain);
+     - sonst Download.
+  6. Herunterladen: unverschlüsselt in den Download-Ordner, Name aus dem Index.
+     Mehrere bzw. Ordner/alles: zip im Browser, Ordner und Dateinamen aus dem Index, dazu
+     Inhaltsverzeichnis.csv (wie im Export „Verzeichnis/zip“); vorher Hinweis auf die Größe.
+     Elemente ohne Datei stehen nur im Inhaltsverzeichnis.
+  7. Verweise in Objektdaten: JSON darf auf weitere o/-Dateien desselben Datasets zeigen
+     (z. B. Fotos eines Vorgangs); das Modul holt sie wieder über die Hülle (Schritte 2–4).
+
+4. Module laden und starten (Hülle)
+  1. Modulliste: i/modules holen, Signatur prüfen, lesen: [{id, version, ref m/<sha256>,
+     content_types, sichtarten, rueckkanal: Nachrichtenarten}]. Nicht verschlüsselt – Module
+     sind kein Geheimnis.
+  2. Benötigt werden die Module aus „modules“ der Startdatei. Fehlende holen: GET m/<sha256>,
+     Hash prüfen, Manifest lesen (muss zur Liste passen), lokal speichern. Neue Version =
+     neuer Hash in der Liste → neues Modul holen, altes nach dem Wechsel löschen.
+  3. Mitgeliefert: der File Explorer (in der Hülle enthalten, kein Laden nötig).
+  4. Starten abgeschottet (WASM in einem eigenen Worker bzw. iframe ohne Netzzugang); das Modul
+     spricht nur über die Schnittstelle der Hülle:
+       datasets()                Datasets, die dem Modul zugeordnet sind (Name, Stand, neu)
+       index(dataset)            Abschnitt 2
+       open(dataset, ref)        Abschnitt 3 (Inhalt und content_type)
+       download(dataset, refs)   Abschnitt 3.6
+       send(nachrichtenart, daten, anhänge)   Rückkanal; nur Arten aus dem Manifest
+       prefetch(dataset, refs)   Dateien vorab lokal holen (offline verfügbar machen), mit Fortschritt
+       usage(dataset)            lokal belegter Platz; usage(dataset, free) gibt Datendateien frei
+       store.get/put             eigener lokaler Speicher des Moduls (z. B. Entwurf vor Ort)
+  5. Startseite: je Modul eine Kachel mit seinen Datasets und Neuigkeiten; ein Modul ohne
+     zugeordnete Datasets erscheint nicht.
+  6. Entfällt ein Modul aus der Startdatei bzw. der Liste: Kachel weg, Modul und sein lokaler
+     Speicher gelöscht (vorher Hinweis, wenn dort Ungesendetes liegt).

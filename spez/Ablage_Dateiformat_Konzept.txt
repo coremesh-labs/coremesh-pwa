@@ -1,0 +1,271 @@
+Konzept: Dateien in der Ablage (Cloudflare R2, zuerst lokales Verzeichnis) – Fassung 2 (2026-11-06)
+====================================================================================================
+Gehört zu Sichten_Export_Konzept.txt (Datasets) und PWA_Verteilung_Konzept.txt (PWA, Rückkanal).
+Weitere Teile: Ablage_Ablauf_Konzept.txt (Abläufe in der PWA), Ablage_Format_Spezifikation.txt
+(Bytes, JSON, Prüfdateien – für den Bau der PWA), Ablage_Explorer_Modul_Konzept.txt (File Explorer).
+Zweck: Der Export schreibt Datasets so ab, dass eine PWA sie ohne Server lesen kann. Die Ablage
+ist dumm (HTTP-GET); alles, was Rechte bedeutet, steckt in Schlüsseln.
+
+Vorgaben (User 2026-11-06)
+- Der Export bekommt einen Schlüsselmanager: Schlüssel je Benutzer und je Dataset.
+- Dateiarten: Startdatei je Benutzer, Datendateien, Dataset-Dateien mit Referenzen, Module.
+- Datendateien tragen neben dem Schlüsselnamen den Content-Type der eigentlichen Daten.
+- Kein Doppeln ins DMS: Objektdaten (z. B. ein Vorgang) liefert das Fachmodul beim Export
+  direkt, als Datendatei (JSON); das DMS bleibt Quelle nur für echte Dokumente.
+- Die PWA wird auf einem anderen Rechner gebaut; hier entstehen Export-Werkzeug, Formatbeschreibung
+  und eine Prüfablage zum Testen.
+
+1. Dateiarten und Pfade
+  Art           Pfad              veränderlich  verschlüsselt für             Inhalt
+  Startdatei    i/<start-id>      ja            Benutzerschlüssel             was der Benutzer sieht + Dataset-Schlüssel
+  Dataset       i/<ablage-id>     ja            Dataset-Schlüssel (neueste)   Index: Elemente, Gliederung, Referenzen
+  Datendatei    o/<sha256>        nein          Dataset-Schlüssel             ein Dokument bzw. Objektdaten
+  Modulliste    i/modules         ja            nicht verschlüsselt, signiert erlaubte Module mit Hash
+  Modul         m/<sha256>        nein          nicht verschlüsselt           Paket: Manifest + WASM/JS
+- <start-id>, <ablage-id>: zufällig (128 Bit, base32), fest für die Lebensdauer; verraten nichts.
+  Die Ablage-ID eines Datasets ist nicht seine Nummer DS-JJJJ-NNNN, sie steht am Dataset.
+- <sha256>: Prüfsumme der ganzen Datei (Kopf + verschlüsselter Inhalt). Die PWA prüft sie.
+- Veränderliches (i/) wird unter fester ID überschrieben, Unveränderliches (o/, m/) nie.
+- Lokal: dieselben Pfade unter einem Verzeichnis (Ablageziel LOKAL, Abschnitt 7.5); der spätere
+  Abgleich mit R2 kopiert nur, was fehlt, und löscht, was nicht mehr gebraucht wird.
+
+2. Gemeinsamer Aufbau jeder Datei (Umschlag) – genau in Ablage_Format_Spezifikation.txt
+  Kopf (JSON, im Klartext):
+    format        "cm1"
+    kind          start | dataset | data | modules | module
+    path          eigener Pfad (i/…; bei o/, m/ leer) – eine unter fremder ID abgelegte Datei fällt auf
+    key           Schlüsselname, z. B. "ds:7q2k…:2" (Dataset, Fassung 2) bzw. "user:h3f…:1"; leer = unverschlüsselt
+    content_type  Typ der eigentlichen Daten, z. B. application/pdf, image/jpeg,
+                  application/vnd.coremesh.dataset+json, application/vnd.coremesh.process+json
+    packing       gzip | none (Scans und Bilder: none; Katalog je Content-Type, 7.9)
+    name          ursprünglicher Dateiname (nur bei Daten; leer erlaubt)
+    size          Größe der eigentlichen Daten (ungepackt)
+    created       Zeitpunkt (UTC)
+    signed_by     Signaturschlüssel des Servers (nur i/), z. B. "srv-sig:1"
+  Danach: Inhalt, erst gepackt, dann verschlüsselt (age, für den Schlüssel aus „key“).
+  Bei i/-Dateien am Ende: Signatur des Servers (Ed25519) über alles davor.
+- Geschützt ist der Kopf bei o/ und m/ durch den Hash im signierten Index bzw. in der signierten
+  Modulliste, bei i/ durch die Signatur.
+- Die PWA liest zuerst nur den Kopf: Hat sie den Schlüssel nicht, lädt sie nichts weiter
+  (KeyName vor jeder Datei, wie im PWA-Konzept).
+- Verfahren (Änderung gegenüber Fassung 1): einheitlich age (X25519, ChaCha20-Poly1305, in
+  64-KB-Blöcken) für Benutzer- und Dataset-Schlüssel. Ein Dataset-Schlüssel ist damit ein
+  age-Schlüsselpaar; sein geheimer Teil steht in den Startdateien der Berechtigten. Vorteil: eine
+  Bibliothek (Go: filippo.io/age, Browser: age-encryption/typage), große Dateien in Blöcken.
+
+3. Inhalte und Verknüpfung (Felder genau in der Spezifikation)
+  Startdatei (application/vnd.coremesh.start+json), je Benutzer – zugleich die Liste
+  seiner Berechtigungen (siehe 4a); sie enthält nur, wozu er berechtigt ist:
+    fassung     laufende Nummer der Startdatei (die PWA nimmt keine ältere an)
+    erstellt    Zeitpunkt
+    teilnehmer  {id, name, rollen: [{rolle, name, bezug}], pin_pflicht}  z. B. Steuerbüro, Mieter von Whg. 16
+    server      {signatur: [{key: "srv-sig:2", public, gueltig_ab, signiert_von: "srv-sig:1", signatur}],
+                 rueckkanal: {key: "srv-box:1", public}, zugang: {url, user, nur_senden}}
+    schluessel  die Dataset-Schlüssel, zu denen er berechtigt ist:
+                [{key: "ds:7q2k…:2", secret, dataset: <ablage-id>, gueltig_ab}]
+                – alle Fassungen, die er lesen darf; eine entzogene Fassung fehlt
+    datasets    [{id: <ablage-id>, name, sichtart, sicht, berechtigt_ueber: rolle,
+                  keys: ["ds:7q2k…:1", "ds:7q2k…:2"], fassung, stand, geliefert, neu_seit,
+                  freigabe_bis, modul}]                → i/<ablage-id>
+    modules     [ModuleId …], nur die für seine Datasets   → i/modules → m/<sha256>
+    hinweise    Neues seit dem letzten Besuch, Fristen (später)
+  Nicht in der Startdatei: der eigene private Benutzerschlüssel und der erste
+  Signaturschlüssel des Servers (kommen beim Einrichten, siehe 4a), Schlüssel und Datasets
+  anderer Benutzer, Datasets ohne Berechtigung.
+  Dataset (application/vnd.coremesh.dataset+json), Index eines Datasets:
+    id, name, sichtart, fassung, zeitraum, stand, geliefert
+    gliederung: Ordner in Reihenfolge
+    elemente: [{nr, ordner, titel, datum, art, partner, content_type, name, groesse, key,
+                kennzeichen, neu, ersetzt_durch, ref: "o/<sha256>"}]
+                – key je Element, weil alte Elemente mit einer älteren Fassung verschlüsselt sind
+    teile: [<ablage-id> …]   zusammengesetzte Sichten (z. B. Beirat), Schlüssel stehen in der Startdatei
+    modul: welches Modul den Index anzeigt (Vorschlag aus der Sichtart)
+  Datendatei: Dokument unverändert (z. B. PDF) oder Objektdaten als JSON mit Schema im
+    Content-Type. JSON darf auf weitere Datendateien desselben Datasets verweisen
+    (z. B. Fotos eines Vorgangs: "ref": "o/<sha256>").
+  Modulliste/Modul: Manifest (ModuleId, Name, Version, Einstieg, Content-Types bzw. Sichtarten,
+    die es anzeigt, Nachrichtenarten für den Rückkanal); geladen wird nur, was mit Hash in der
+    signierten Modulliste steht.
+  Kette: Startdatei → Dataset-Index → Datendateien; Startdatei → Modulliste → Module.
+
+4. Schlüsselmanager (im Modul export)
+  - Serverschlüssel: Ed25519 (signieren), X25519 (Rückkanal empfangen). Einmal je Installation,
+    erneuerbar (neuer Signaturschlüssel wird mit dem alten signiert, 4a).
+  - Benutzerschlüssel: je Teilnehmer ein X25519-Paar (age), vom Server erzeugt (Frage A).
+  - Dataset-Schlüssel: je Dataset ein X25519-Paar (age), mit Fassung. Neue Fassung, wenn jemand
+    die Berechtigung verliert (7.7).
+  - Ablage der geheimen Schlüssel am Server: verschlüsselt mit einem Hauptschlüssel außerhalb
+    der Datenbank (7.8).
+  - Zuordnung Teilnehmer ↔ Dataset: über Freigaben der Sicht (7.2).
+
+4a. Wie die PWA an ihre Schlüssel kommt (Klärung 2026-11-06)
+  Die Startdatei übergibt die Schlüssel, zu denen der Benutzer berechtigt ist – nicht alle,
+  die es gibt, und nicht alle, die die PWA brauchen könnte. Was nicht in seiner Startdatei
+  steht, kann er nicht lesen, auch wenn er die Datei in der Ablage findet. Berechtigung
+  entziehen heißt darum: Schlüssel aus der Startdatei nehmen und für neue Inhalte eine neue
+  Fassung des Dataset-Schlüssels (nur in den Startdateien der weiter Berechtigten).
+  Nur drei Dinge können nicht aus der Startdatei kommen, weil man sie braucht, um die
+  Startdatei zu lesen und ihr zu trauen; sie kommen beim Einrichten (QR-Code bzw. Link, 7.3):
+    1. die ID der Startdatei (und die Adresse der Ablage),
+    2. der eigene private Benutzerschlüssel (vom Server, Frage A),
+    3. der öffentliche Signaturschlüssel des Servers (Vertrauensanker; prüft jede i/-Datei).
+  Alles Weitere steht in der Startdatei (verschlüsselt für den Benutzer, signiert vom Server):
+    - je Dataset, zu dem er berechtigt ist, der Dataset-Schlüssel in allen Fassungen, die er
+      lesen darf,
+    - der öffentliche Schlüssel des Servers für den Rückkanal (Nachrichten an den Server),
+    - neue Fassungen von Dataset-Schlüsseln und ein neuer Signaturschlüssel des Servers
+      (signiert mit dem bisherigen) – so muss niemand neu einrichten.
+  Öffentliche Schlüssel anderer Benutzer braucht die PWA nie: Sie verschlüsselt nur für den Server.
+  Ablauf beim Öffnen: QR → Startdatei holen → Signatur prüfen → mit dem Benutzerschlüssel
+  entschlüsseln → Dataset-Schlüssel → Indizes → Datendateien.
+  Die Startdatei ist damit die Liste der Berechtigungen des Benutzers: Der Schlüsselmanager
+  baut sie aus Teilnehmer → Rollen → Freigaben der Sichten → Datasets neu, sobald sich eine
+  Berechtigung oder ein Dataset ändert (7.4).
+
+4b. Abläufe in der PWA: siehe Ablage_Ablauf_Konzept.txt; File Explorer: Ablage_Explorer_Modul_Konzept.txt.
+
+5. Folgen für das Gebaute
+  - Ablageziel neu: Art OBJEKTSPEICHER, Anbieter LOKAL (Pfad) bzw. später R2 (Bucket, Zugang).
+  - Dataset löschen: Index und nicht mehr referenzierte Datendateien in der Ablage löschen (7.6).
+  - Sichtart VORGANG: kein PDF mehr ins DMS (refresh_call raus); stattdessen Objektdaten des
+    Vorgangs als JSON-Element (Process.exportData, 7.9).
+
+6. Entscheidungen und offene Fragen
+  A) Benutzerschlüssel: vom Server erzeugt, privater Teil im QR-Code bzw. Link (entschieden
+     2026-11-06). Später, mit Rückkanal, wahlweise auf dem Gerät erzeugt.
+  B) Doppelte: Schlüssel je Dataset; eine Rechnung in zwei Datasets liegt zweimal unter o/
+     (entschieden 2026-11-06). Später umstellbar auf Schlüssel je Datendatei.
+  C) Eigener Katalog „Teilnehmer“ mit Bezug auf Geschäftspartner bzw. Benutzer (entschieden
+     2026-11-06), 7.1.
+  D) Für Menschen lesbare Namen im Index (Ordner/Datei wie im zip): ja (entschieden).
+  E) Offen, betrifft nur die PWA: Schutz des privaten Schlüssels auf dem Gerät. Vorschlag: PIN
+     wählbar, Pflicht je Rolle (Feld pin_pflicht, z. B. Steuerbüro).
+
+7. Export-Seite (Fassung 2, 2026-11-06)
+  Alles hier wird in der Weboberfläche des Exports gepflegt; Fachregeln stehen in Katalogen.
+
+  7.1 Teilnehmer und Rollen
+    Rolle (Katalog): Code, Bezeichnung, PIN Pflicht. Vorschläge: STB Steuerbüro, MIETER Mieter,
+      EIGENTUEMER Eigentümer, BEIRAT Verwaltungsbeirat, HANDWERKER Handwerker.
+    Teilnehmer: Nummer TN-JJJJ-NNNN, Name, Geschäftspartner (optional), Benutzer der Anmeldung
+      (optional), E-Mail, Status ENTWURF Entwurf / AKTIV Aktiv / GESPERRT Gesperrt, Start-ID,
+      Fassung des Benutzerschlüssels, eingerichtet am, gesperrt am, Fassung der Startdatei.
+    Rollen des Teilnehmers: Rolle, Bezug (Geschäftspartner, Objekt bzw. Einheit; je nach Rolle
+      leer), gültig von/bis.
+
+  7.2 Freigaben je Sicht (wer welches Dataset sieht)
+    Freigabe: Sicht, Rolle, Bezugsregel, Modul (Vorgabe), Freigabe bis (optional).
+    Bezugsregel (Katalog):
+      ALLE         jeder Teilnehmer mit der Rolle sieht alle Datasets der Sicht (Steuerbüro)
+      PARTNER      nur Datasets, deren Geschäftspartner der Bezug seiner Rolle ist (Mieter → Energie-Monitor)
+      OBJEKT       nur Datasets des Objekts bzw. der Einheit seiner Rolle
+      BETEILIGTE   das Fachmodul nennt die Beteiligten (Aktion je Sichtart, z. B. Process.participants)
+    Vorgaben je Sichtart: STEUERBUERO → STB/ALLE, VERBRAUCHSINFO → MIETER/PARTNER,
+      VORGANG → BETEILIGTE. Ein Dataset ohne passende Freigabe wird nicht in die Ablage geschrieben.
+    Die Sicht zeigt je Dataset „sichtbar für“ (Teilnehmer mit Rolle), der Teilnehmer „sieht“.
+
+  7.3 Einrichten, neu einrichten, sperren (Aktionen am Teilnehmer)
+    Einrichten: Benutzerschlüssel und Start-ID erzeugen, Startdatei schreiben, Status AKTIV,
+      Einrichtungsbrief als PDF über eine Vorlage (Auftragsart EXPORT_SETUP): Text, QR-Code mit
+      dem Einrichtungslink, Hinweis „wie ein Schlüssel aufbewahren“. Der Brief wird nicht im DMS
+      abgelegt (er enthält den privaten Schlüssel) und nur einmal angezeigt.
+    Einrichtungslink: https://<Adresse der PWA>/#cm1:<Daten> – die Daten (Adresse der Ablage,
+      Start-ID, privater Schlüssel, Signaturschlüssel des Servers) stehen hinter #, gehen also
+      nie an einen Server. Genau in der Spezifikation.
+    Neu einrichten (Gerät verloren, Brief weg): neue Fassung des Benutzerschlüssels, neue Start-ID,
+      neuer Brief; die alte Startdatei wird wie beim Sperren geleert.
+    Sperren: alte Startdatei bekommt eine höhere Fassung mit leeren Listen (die PWA löscht dann
+      alles, Ablauf 1.7/1.8), Status GESPERRT, Schlüsselwechsel der betroffenen Datasets (7.7);
+      die leere Startdatei wird nach der Wartezeit (7.6) gelöscht.
+
+  7.4 Schreiben in die Ablage (Lieferung an ein Ablageziel OBJEKTSPEICHER)
+    Auslöser: nach jeder Erneuerung eines Datasets (Zeitgeber bzw. Änderung) und von Hand
+      „jetzt liefern“. Startdateien werden gesammelt neu gebaut, einmal am Ende eines Laufs.
+    Reihenfolge, damit nie ein Verweis ins Leere zeigt:
+      1. Datendateien: für jedes Element ohne Ablagedatei Inhalt holen (DMS bzw. Fachmodul),
+         packen, verschlüsseln mit der neuesten Fassung, Hash, schreiben o/<sha256>. Gleicher
+         Inhalt (Prüfsumme der Quelle) mit gleicher Fassung wird nicht neu geschrieben – die
+         Belegung (7.6) kennt ihn; age verschlüsselt sonst jedes Mal anders.
+      2. Index: neu bauen (Fassung +1), verschlüsseln mit der neuesten Fassung, signieren, i/<ablage-id>.
+      3. Startdateien aller Betroffenen: Fassung +1, signieren, i/<start-id>.
+      4. Modulliste, wenn sich Module geändert haben.
+    Neu gebaut wird eine Startdatei bei: Teilnehmer/Rolle/Freigabe geändert, Dataset neu,
+      geliefert oder gelöscht, Schlüsselwechsel, Modulliste geändert, neuer Signaturschlüssel.
+    Lokal atomar: in eine Hilfsdatei im selben Verzeichnis schreiben, dann umbenennen.
+    Stand und Fassung: „stand“ ist der Stand (state_no) des Datasets, „fassung“ zählt jede
+      Lieferung des Index; „geliefert“ ist der Zeitpunkt, „neu_seit“ der Beginn des Standes.
+    Elemente aus dem Dataset (export__item) werden wie im Export „Verzeichnis/zip“ benannt
+      (Ordner, Dateiname); titel, datum, art {code, name}, partner {id, name} aus dem DMS bzw.
+      dem Fachmodul; kennzeichen {code, name, notiz} aus der Markierung; neu aus is_new;
+      ersetzt_durch = nr; Elemente ohne Datei (REMOVED, DISCARDED) haben ref leer.
+
+  7.5 Ablageziel OBJEKTSPEICHER
+    Anbieter LOKAL: Verzeichnis (Vorgabe: <Datenverzeichnis>/ablage/<Code des Ablageziels>).
+    Anbieter R2 (später): Konto, Bucket, Zugang (verschlüsselt mit dem Hauptschlüssel),
+      Abgleich mit Probelauf („würde kopieren/löschen“), danach echt.
+    Zum Ablageziel: belegte Größe, Zahl der Dateien, Warnschwelle (Vorgabe 8 GB bei 10 GB frei),
+      letzte Lieferung, Fehler.
+
+  7.6 Belegung, Löschen, Protokoll
+    Ablagedatei (Tabelle): Ablageziel, Pfad, Art, Hash, Größe, Dataset, Element, Schlüssel,
+      Quelle (Dokument bzw. Objekt mit Prüfsumme), geschrieben am, unbenutzt seit, gelöscht am.
+    Unbenutzt: o/ ohne Element in einem aktuellen Index, i/ eines gelöschten Datasets bzw.
+      gesperrten Teilnehmers. Gelöscht wird erst nach einer Wartezeit (Parameter, Vorgabe 7 Tage),
+      weil Geräte noch den alten Index haben können.
+    Dataset löschen (Lebensdauer abgelaufen, Vorgang abgeschlossen): Dataset aus allen
+      Startdateien, dann Index und Datendateien nach der Wartezeit.
+    Protokoll: welche Datei wann geschrieben bzw. gelöscht wurde, welche Startdatei-Fassung
+      welche Datasets enthielt. Wer wann gelesen hat, weiß die Ablage nicht.
+
+  7.7 Schlüsselwechsel
+    Auslöser: Ein Teilnehmer verliert die Berechtigung (Rolle endet, Freigabe abgelaufen,
+      gesperrt). Dann neue Fassung des Dataset-Schlüssels; Index und neue Elemente nur noch
+      damit; die weiter Berechtigten bekommen alle Fassungen.
+    Alte Datendateien werden nicht neu verschlüsselt. Was der Entzogene schon geladen hat (bzw.
+      mit der alten Fassung noch lesen kann, wenn er den Pfad kennt), behält er; neue Inhalte
+      und neue Indizes sieht er nicht. Später wahlweise: „neu verschlüsseln“ eines Datasets.
+    Serverschlüssel: neuer Signaturschlüssel von Hand (Aktion), mit dem alten signiert, in alle
+      Startdateien; der alte bleibt eine Zeit gültig.
+
+  7.8 Hauptschlüssel
+    Datei <Datenverzeichnis>/keys/export-master.key (32 Byte zufällig, nur für den Dienst lesbar),
+      beim ersten Gebrauch erzeugt; nicht in der Datenbank, nicht in deren Sicherung.
+    Sichern: Aktion „Hauptschlüssel sichern“ zeigt ihn einmal als Text bzw. QR zum Ausdrucken;
+      die Oberfläche merkt sich, ob und wann gesichert wurde, und mahnt sonst.
+    Wiederherstellen: Aktion „Hauptschlüssel einspielen“. Ohne Hauptschlüssel sind alle
+      geheimen Schlüssel verloren: alle Teilnehmer neu einrichten, alle Datasets neu schreiben.
+    Release-Wechsel: die Datei liegt im Datenverzeichnis und bleibt beim Update erhalten.
+
+  7.9 Content-Types und Objektdaten
+    Content-Type (Katalog): Typ, Bezeichnung, Endung, Packen (gzip/none), Anzeige-Hinweis
+      (BROWSER, MODUL, DOWNLOAD), Schema-Fassung. Vorgaben: application/pdf none, image/* none,
+      text/csv gzip, application/json und *+json gzip, application/xml gzip.
+    Objektdaten: an der Sichtart eine Aktion (Feld export_call, z. B. Process.exportData).
+      Eingabe: Objekt-ID, Dataset. Ausgabe: content_type, name, data (JSON) und anhaenge
+      [{doc_id | content, content_type, name}]. Der Export schreibt die Anhänge als eigene
+      Datendateien und ersetzt in data die Platzhalter "$anhang:<n>" durch "o/<sha256>".
+    Vorgang (application/vnd.coremesh.process+json;v=1): id, typ {code, name}, titel, status,
+      eroeffnet, abgeschlossen, objekt, einheit, beteiligte [{rolle, name}], ereignisse
+      [{datum, art, text, von}], anhaenge [{name, content_type, ref}]. Genau in der Spezifikation.
+
+  7.10 Module veröffentlichen
+    Modul (Katalog): ModuleId, Name, Version, Hash, Content-Types, Sichtarten, Nachrichtenarten,
+      Status. Hochladen in der Weboberfläche als Paket (vom anderen Rechner gebaut); der Export
+      prüft das Manifest, schreibt m/<sha256> und eine neue, signierte i/modules.
+    Der File Explorer ist in der PWA eingebaut und steht in der Liste ohne ref (eingebaut).
+
+  7.11 Prüfablage für den Bau der PWA
+    Aktion „Prüfablage erzeugen“: eigenes Ablageziel LOKAL aus dem Testbestand (Faust-Namen):
+      Teilnehmer z. B. Wagner (Steuerbüro, ALLE), Gretchen (Mieterin, PARTNER), Marthe
+      Schwerdtlein (Beirat); je ein Steuer-Dataset, Energie-Monitor-Datasets, ein Vorgang mit
+      Foto, ein storniertes und ein ersetztes Element, ein Schlüsselwechsel, ein gesperrter Teilnehmer.
+    Download als zip: Ablageverzeichnis + Einrichtungslinks (Textdatei) + Beschreibung. Auf dem
+      anderen Rechner genügt ein beliebiger Webserver für statische Dateien mit CORS.
+    Dazu feste Prüfdateien (Testvektoren) im Quelltext des Exports, siehe Spezifikation 6.
+
+  7.12 Reihenfolge des Baus (Vorschlag)
+    1. Format cm1 in Go mit Prüfdateien, Hauptschlüssel, Serverschlüssel.
+    2. Teilnehmer, Rollen, Freigaben, Einrichten/Sperren mit Brief.
+    3. Ablageziel OBJEKTSPEICHER/LOKAL, Lieferung (7.4), Belegung und Löschen.
+    4. Content-Type-Katalog, Process.exportData, VORGANG ohne PDF.
+    5. Prüfablage; Module hochladen; später R2-Abgleich.

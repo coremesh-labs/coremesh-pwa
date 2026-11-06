@@ -1,0 +1,165 @@
+Spezifikation: Ablageformat cm1 – Fassung 1 (2026-11-06)
+=========================================================
+Für den Bau der PWA (anderer Rechner) und des Exports. Hintergrund und Begründungen:
+Ablage_Dateiformat_Konzept.txt; Abläufe: Ablage_Ablauf_Konzept.txt; File Explorer:
+Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ heißt: sonst Datei verwerfen.
+
+1. Grundlagen
+  Adresse der Ablage: Basis-URL mit „/“ am Ende; jede Datei liegt unter Basis + Pfad.
+  Pfade:  i/<id>   veränderlich (Startdatei, Dataset-Index), i/modules (Modulliste)
+          o/<hex>  Datendatei, unveränderlich, <hex> = SHA-256 der ganzen Datei, 64 Zeichen klein
+          m/<hex>  Modulpaket, unveränderlich, ebenso
+  IDs: 16 Zufallsbytes, base32 (RFC 4648) klein, ohne „=“ → 26 Zeichen, z. B. 7q2kx3…
+  Zeitpunkte: RFC 3339 in UTC, z. B. "2026-11-06T14:03:00Z"; Tage: "2026-11-06".
+  Texte: UTF-8. JSON: unbekannte Felder ignorieren (Erweiterungen kommen dazu, nichts wird umgedeutet).
+  HTTP: nur GET. i/ ohne Zwischenspeicher holen (cache: "no-store"); o/, m/ dürfen dauerhaft
+    zwischengespeichert werden. Die Ablage liefert CORS für die Adresse der PWA.
+
+2. Schlüssel und Schlüsselnamen
+  Name                     Art                         Darstellung
+  user:<uid>:<n>           Benutzerschlüssel, age      geheim "AGE-SECRET-KEY-1…", öffentlich "age1…"
+  ds:<ablage-id>:<n>       Dataset-Schlüssel, age      ebenso
+  srv-sig:<n>              Signatur des Servers, Ed25519  öffentlich: base64url ohne „=“ (32 Byte)
+  srv-box:<n>              Rückkanal des Servers, age  öffentlich "age1…"
+  <uid> = zufällige ID des Teilnehmers, <ablage-id> = ID des Datasets, <n> = Fassung ab 1.
+  Verschlüsselung: age v1 (https://age-encryption.org/v1), Binärform (nicht ASCII-Armor),
+    genau ein Empfänger: der öffentliche Teil des Schlüssels aus „key“.
+    Bibliotheken: Go filippo.io/age; Browser npm age-encryption (typage).
+  Signatur: Ed25519 (RFC 8032), 64 Byte; im Browser WebCrypto "Ed25519" bzw. @noble/ed25519.
+
+3. Aufbau einer Datei (Umschlag)
+  Byte-Folge:
+    magic      4 Byte   "cm1\n" (63 6d 31 0a)
+    hlen       4 Byte   Länge des Kopfes, big-endian, höchstens 65536
+    header     hlen     Kopf, JSON (UTF-8, ein Objekt)
+    blen       8 Byte   Länge des Inhalts, big-endian
+    body       blen     Inhalt
+    signatur   64 Byte  nur wenn header.signed_by nicht leer: Ed25519 über alle Bytes davor
+                        (magic bis Ende body)
+  Danach darf nichts mehr kommen.
+  Inhalt:
+    header.key nicht leer → body = age-Datei; entschlüsselt = gepackte Daten
+    header.key leer       → body = gepackte Daten (nur kind modules und module)
+    gepackt: packing "gzip" (RFC 1952; Browser DecompressionStream("gzip")) bzw. "none".
+  Kopffelder:
+    format        "cm1"                                         muss
+    kind          start | dataset | data | modules | module     muss
+    path          eigener Pfad bei i/ ("i/7q2k…"), sonst ""     muss bei i/
+    key           Schlüsselname oder ""                         muss
+    content_type  Typ der entpackten Daten                      muss
+    packing       gzip | none                                   muss
+    name          ursprünglicher Dateiname (data), sonst ""
+    size          Länge der entpackten Daten in Byte
+    created       Zeitpunkt
+    signed_by     "srv-sig:<n>" bei i/, sonst ""                muss bei i/
+  Feste Paare kind → content_type:
+    start    application/vnd.coremesh.start+json;v=1      key user:…   signiert
+    dataset  application/vnd.coremesh.dataset+json;v=1    key ds:…     signiert
+    modules  application/vnd.coremesh.modules+json;v=1    key ""       signiert
+    module   application/vnd.coremesh.module+zip;v=1      key ""       nicht signiert (Hash in der Liste)
+    data     beliebig                                     key ds:…     nicht signiert (Hash im Index)
+  Parameter ;v=N im Content-Type: Fassung des Schemas. Unbekanntes N → Datei nicht verwenden,
+    Hinweis „App aktualisieren“.
+
+4. Prüfen beim Lesen (Reihenfolge, Fehlercodes)
+  1. o/, m/: SHA-256 der ganzen Datei = Name im Pfad                         sonst E_HASH
+  2. magic, Längen stimmen, nichts dahinter                                  sonst E_FORMAT
+  3. Kopf: format "cm1", Pflichtfelder, kind passt zum Pfad und zur Erwartung sonst E_FORMAT
+  4. i/: path = angefragter Pfad                                             sonst E_PATH
+  5. i/: signed_by ist ein vertrauter Signaturschlüssel, Signatur gültig     sonst E_SIG
+  6. key ist im Schlüsselbund (bzw. eigener Benutzerschlüssel)               sonst E_KEY
+     (bei data: key = key des Elements im Index)
+  7. Entschlüsseln (age)                                                     sonst E_DECRYPT
+  8. Entpacken; Länge = size                                                 sonst E_FORMAT
+  9. content_type = erwarteter Typ (bei data: wie im Index)                  sonst E_TYPE
+  10. start, dataset: fassung nicht kleiner als die zuletzt angenommene       sonst E_OLD
+  Bei Fehlern: Datei verwerfen, zuletzt gültige Fassung behalten, Fehlercode melden.
+
+5. Inhalte (JSON)
+  5.1 Startdatei
+    {
+      "fassung": 12, "erstellt": "2026-11-06T14:03:00Z",
+      "teilnehmer": {"id": "<uid>", "name": "Gretchen", "pin_pflicht": false,
+        "rollen": [{"rolle": "MIETER", "name": "Mieter", "bezug": {"art": "EINHEIT", "id": "…", "name": "Faustgasse 1, Whg. 16"}}]},
+      "server": {
+        "signatur": [{"key": "srv-sig:1", "public": "…", "gueltig_ab": "2026-11-06"},
+                     {"key": "srv-sig:2", "public": "…", "gueltig_ab": "2027-01-01",
+                      "signiert_von": "srv-sig:1", "signatur": "<base64url>"}],
+        "rueckkanal": {"key": "srv-box:1", "public": "age1…"},
+        "zugang": null},
+      "schluessel": [{"key": "ds:7q2k…:1", "secret": "AGE-SECRET-KEY-1…", "dataset": "7q2k…", "gueltig_ab": "2026-11-06"}],
+      "datasets": [{"id": "7q2k…", "name": "Energie-Monitor Gretchen 2026-10",
+        "sichtart": {"code": "VERBRAUCHSINFO", "name": "Energie-Monitor"},
+        "sicht": {"id": "…", "name": "Energie-Monitor Faustgasse 1"},
+        "berechtigt_ueber": "MIETER", "keys": ["ds:7q2k…:1"],
+        "fassung": 3, "stand": 1, "geliefert": "2026-11-06T14:00:00Z",
+        "neu_seit": "2026-11-01T00:00:00Z", "freigabe_bis": "2028-04-30", "modul": "explorer"}],
+      "modules": ["explorer"],
+      "hinweise": []
+    }
+    Signatur eines neuen Signaturschlüssels: Ed25519 mit „signiert_von“ über den UTF-8-Text
+      "cm1-srv-sig\n" + key + "\n" + public + "\n" + gueltig_ab. Übernehmen nur, wenn gültig.
+    Leere Listen datasets und schluessel = gesperrt: alles Lokale löschen.
+    zugang: Zugang zum Rückkanal (später), sonst null.
+  5.2 Dataset-Index
+    {
+      "id": "7q2k…", "name": "Steuerunterlagen 2026", "fassung": 5, "stand": 2,
+      "sichtart": {"code": "STEUERBUERO", "name": "Steuerbüro"},
+      "zeitraum": {"von": "2026-01-01", "bis": "2026-12-31"},
+      "geliefert": "2026-11-06T14:00:00Z",
+      "gliederung": [{"ordner": "01 Eingangsrechnungen", "name": "Eingangsrechnungen"}],
+      "elemente": [{"nr": 1, "ordner": "01 Eingangsrechnungen", "name": "2026-03-01_Stadtwerke.pdf",
+        "titel": "Rechnung Strom März", "datum": "2026-03-01",
+        "art": {"code": "ER", "name": "Eingangsrechnung"}, "partner": {"id": "…", "name": "Stadtwerke Auerbach"},
+        "content_type": "application/pdf", "groesse": 183422, "key": "ds:7q2k…:1",
+        "neu": false, "kennzeichen": null, "ersetzt_durch": null, "ref": "o/3f9a…"}],
+      "teile": [],
+      "modul": "explorer"
+    }
+    kennzeichen: null oder {"code": "CANCELLED", "name": "storniert", "notiz": "…", "am": "2026-10-02"}.
+    ref "" = Element ohne Datei (nur im Verzeichnis). ersetzt_durch = nr eines Elements.
+    teile: IDs weiterer Datasets (zusammengesetzte Sicht); deren Schlüssel stehen in der Startdatei.
+  5.3 Modulliste
+    {"fassung": 4, "erstellt": "…", "module": [
+      {"id": "explorer", "name": "Dateien", "version": "1.0.0", "ref": "",
+       "content_types": ["application/vnd.coremesh.dataset+json"], "sichtarten": ["*"], "rueckkanal": []},
+      {"id": "vorgaenge", "name": "Vorgänge", "version": "0.1.0", "ref": "m/9c1e…",
+       "content_types": ["application/vnd.coremesh.process+json"], "sichtarten": ["VORGANG"],
+       "rueckkanal": ["VORGANG_NOTIZ"]}]}
+    ref "" = in der PWA eingebaut.
+  5.4 Modulpaket (zip)
+    manifest.json: {id, name, version, einstieg: "index.html" bzw. "main.wasm", content_types,
+      sichtarten, rueckkanal, api: 1} – muss zum Eintrag der Modulliste passen; dazu die Dateien
+      des Moduls.
+  5.5 Objektdaten Vorgang (application/vnd.coremesh.process+json;v=1)
+    {"id": "AF-2026-0001", "typ": {"code": "KLAERUNG", "name": "Klärung"}, "titel": "…",
+     "status": {"code": "OPEN", "name": "offen"}, "eroeffnet": "2026-10-01", "abgeschlossen": null,
+     "objekt": {"id": "…", "name": "Faustgasse 1"}, "einheit": {"id": "…", "name": "Whg. 16"},
+     "beteiligte": [{"rolle": "MIETER", "name": "Gretchen"}],
+     "ereignisse": [{"datum": "2026-10-01T09:00:00Z", "art": {"code": "NOTE", "name": "Notiz"}, "text": "…", "von": "Verwaltung"}],
+     "anhaenge": [{"name": "Foto_Bad.jpg", "content_type": "image/jpeg", "ref": "o/77ab…"}]}
+    Anhänge sind eigene Datendateien desselben Datasets und stehen auch im Index.
+
+6. Einrichtungslink
+  https://<Adresse der PWA>/#cm1:<base64url ohne „=“ von JSON>
+  {"v": 1, "ablage": "https://…/", "start": "<start-id>", "name": "Gretchen",
+   "key": {"name": "user:<uid>:1", "secret": "AGE-SECRET-KEY-1…"},
+   "sig": {"key": "srv-sig:1", "public": "…"}}
+  Die PWA übernimmt die Daten, entfernt den Teil hinter # aus der Adresse (history.replaceState)
+  und holt die Startdatei. Als QR-Code im Einrichtungsbrief (Byte-Modus).
+
+7. Prüfdateien (Testvektoren)
+  Im Export unter cmd/plugins/export/internal/export/testdata/cm1/:
+    keys.json     feste Prüfschlüssel (Benutzer, Dataset Fassung 1 und 2, Signatur 1 und 2)
+    *.cm1         Dateien, unter ihrem Pfad (i/…, o/…)
+    expect.json   je Datei: {pfad, gueltig, fehler, inhalt_sha256, content_type}
+  Fälle: data PDF none; data JSON gzip; Index; Startdatei; Startdatei mit neuem Signaturschlüssel;
+    gesperrte Startdatei; Modulliste; falscher Hash (E_HASH); falsche Signatur (E_SIG); unter
+    fremdem Pfad (E_PATH); unbekannter Schlüssel (E_KEY); abgeschnitten bzw. Bytes dahinter
+    (E_FORMAT); falscher Content-Type (E_TYPE); ältere Fassung (E_OLD).
+  Der Export prüft sich in seinen Tests gegen dieselben Dateien; die PWA ebenso.
+  Dazu die Prüfablage (Konzept 7.11) für das Zusammenspiel.
+
+8. Änderungen am Format
+  Neue Felder: jederzeit (ignorieren). Neue Schema-Fassung: ;v=N+1, der Export schreibt dann
+  eine Zeit lang nicht ohne Not neu. Anderer Byte-Aufbau: "cm2".

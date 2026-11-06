@@ -1,0 +1,19 @@
+[package]
+name = "tools"
+description = "Werkzeuge: Prüfablage erzeugen (Testbestand im Format cm1), Modulpaket packen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cm1tool"
+path = "src/main.rs"
+
+[dependencies]
+cm1 = { path = "../cm1" }
+serde_json = "1"
+age = "0.11"
+secrecy = "0.10"
+getrandom = "0.2"
+data-encoding = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }

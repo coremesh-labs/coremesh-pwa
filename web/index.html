@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1d4f6b">
+  <meta name="description" content="Ablage: Unterlagen lesen, öffnen und herunterladen">
+  <title>Ablage</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" class="app"><p class="laden">Lade …</p></div>
+  <script type="module">
+    import init, { boot } from './pkg/pwa/pwa.js';
+    try {
+      await init();
+      await boot(document.getElementById('app'));
+    } catch (e) {
+      document.getElementById('app').innerHTML =
+        '<main class="einrichten"><h1>Fehler</h1><p class="status">' + String(e) + '</p></main>';
+      console.error(e);
+    }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(console.error);
+    }
+  </script>
+</body>
+</html>

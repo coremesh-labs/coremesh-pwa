@@ -1,0 +1,14 @@
+{
+  "name": "Ablage",
+  "short_name": "Ablage",
+  "description": "Unterlagen lesen, öffnen und herunterladen",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#1d4f6b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

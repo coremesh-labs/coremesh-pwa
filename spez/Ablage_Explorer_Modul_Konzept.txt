@@ -1,0 +1,95 @@
+Konzept: Modul File Explorer („Dateien“) – Fassung 1 (2026-11-06)
+================================================================
+Gehört zu Ablage_Ablauf_Konzept.txt (Hülle, Schnittstelle der Module) und
+Ablage_Format_Spezifikation.txt (Index, Modulliste). Der File Explorer ist in der PWA eingebaut,
+benutzt aber nur die Schnittstelle der Hülle wie jedes andere Modul – so bleibt er Vorbild und
+Prüfstein für spätere Module.
+
+1. Zweck und Benutzer
+  Datasets ansehen, durchsuchen, öffnen und herunterladen – für alle, die Unterlagen bekommen:
+  - Steuerbüro (Wagner): Steuerunterlagen eines Jahres, wachsend; braucht „was ist neu“,
+    Download als zip mit Inhaltsverzeichnis, am PC.
+  - Mieter (Gretchen): Energie-Monitor, Abrechnungen; wenige Dateien, am Handy.
+  - Beirat (Marthe Schwerdtlein): zusammengesetzte Sicht (Belege, Protokolle).
+  Keine Bearbeitung, kein Hochladen (das ist Sache späterer Module über den Rückkanal).
+
+2. Einbindung
+  Manifest (Eintrag in der Modulliste, ref ""): id "explorer", Name „Dateien“,
+    content_types [application/vnd.coremesh.dataset+json], sichtarten ["*"], rueckkanal [].
+  Zuordnung: alle Datasets, deren Feld „modul“ in der Startdatei "explorer" ist (Vorgabe der
+    Freigabe, Konzept 7.2). Datasets eines anderen Moduls zeigt der Explorer nicht.
+  Benutzte Schnittstelle (Ablauf 4.4): datasets(), index(), open(), download(), prefetch(),
+    usage(), store.get/put. Keine eigenen Netzzugriffe, keine Schlüssel.
+
+3. Ansichten
+  3.1 Übersicht (Einstieg aus der Kachel der Startseite)
+    - Datasets gegliedert nach Sicht (Name der Sicht), darin nach Zeitraum absteigend.
+    - Je Dataset: Name, Zeitraum, Stand vom (geliefert), Zahl der Elemente, Zahl „neu“,
+      Freigabe bis (Hinweis ab 30 Tagen davor: „verfällt am …“), offline verfügbar ja/teilweise/nein.
+    - Ohne Netz: Hinweis „Stand vom …“; Datasets ohne lokalen Index ausgegraut.
+  3.2 Dataset
+    - Kopf: Name, Zeitraum, Stand, „neu seit …“.
+    - Links bzw. oben (Handy: aufklappbar): Ordner nach „gliederung“ mit Zahl der Elemente und
+      der neuen; zusammengesetzte Sicht: je Teil eine Ebene darüber (Name des Teils), Teil ohne
+      Berechtigung ausgegraut mit Hinweis.
+    - Liste der Elemente in der Reihenfolge „nr“; Spalten Titel, Datum, Art, Partner, Größe;
+      sortierbar nach Datum, Titel, Partner, Größe (Wahl wird gemerkt).
+    - Markierungen: „neu“ (Punkt); Kennzeichen als Schild mit Bezeichnung (storniert, ersetzt,
+      entfernt …) und Notiz als Tooltip; Gekennzeichnete blass. „ersetzt durch“ springt zum
+      Nachfolger. Elemente ohne Datei: kein Öffnen/Download, Hinweis „ohne Datei“.
+    - Am Handy: Liste statt Tabelle (Titel groß, darunter Datum · Partner · Größe).
+  3.3 Element (Tippen bzw. Doppelklick)
+    - Öffnen über die Hülle (open): Modul für den Content-Type, sonst Browser (PDF, Bild), sonst
+      Download. Bilder und PDF als Vorschau im Explorer, wenn der Browser sie zeigen kann.
+    - Angaben: alle Felder des Elements, Kennzeichen mit Notiz, Vorgänger/Nachfolger.
+    - Blättern zum vorigen/nächsten Element im Ordner.
+
+4. Suchen und Filtern
+  - Suche (ein Feld) über Titel, Partner, Art, Dateiname – im aktuellen Dataset bzw. wahlweise
+    über alle Datasets des Explorers; nur über die lokalen Indizes, also auch offline.
+  - Filter: nur neu, ohne Gekennzeichnete, Art (aus den vorhandenen Arten), Zeitraum (Datum von/bis).
+  - Treffer zeigen Dataset und Ordner.
+
+5. Auswahl und Herunterladen
+  - Auswahl: einzeln, mehrere, Ordner, ganzes Dataset, Suchergebnis.
+  - Herunterladen über die Hülle (download): eine Datei unverändert; mehrere als zip mit
+    Ordnern und Dateinamen aus dem Index und Inhaltsverzeichnis.csv (Spalten wie im Export
+    „Verzeichnis/zip“: Nr, Ordner, Datei, Titel, Datum, Art, Partner, Neu, Kennzeichen, Notiz);
+    Elemente ohne Datei nur im Inhaltsverzeichnis.
+  - Vorher: Größe und Zahl der Dateien, bei mehr als 100 MB Rückfrage.
+  - „Nur Neue herunterladen“ als eigener Knopf (fürs Steuerbüro: Nachlieferung).
+
+6. Neu und gesehen
+  - „neu“ aus dem Index (neu im aktuellen Stand) und zusätzlich „seit meinem letzten Besuch“:
+    der Explorer merkt sich je Dataset, welche Elemente geöffnet bzw. heruntergeladen wurden
+    (store), und den Zeitpunkt des letzten Besuchs.
+  - „Alle als gesehen markieren“ je Dataset. Die Zahlen auf der Kachel der Startseite kommen
+    aus datasets() (Hülle) und dem eigenen Merker.
+
+7. Offline
+  - Index: lädt die Hülle vorab (klein). Dateien erst beim Öffnen, dann bleiben sie lokal.
+  - „Offline verfügbar machen“ für Dataset bzw. Ordner (prefetch), vorher Größe; Fortschritt.
+  - Speicher (usage): belegter Platz je Dataset, „lokale Dateien freigeben“ (Index bleibt).
+  - Was die Hülle beim Entzug der Berechtigung löscht, verschwindet ohne Rückfrage; Hinweis
+    „nicht mehr freigegeben“ beim nächsten Öffnen.
+
+8. Fehler und Hinweise (Codes aus der Spezifikation 4)
+  E_HASH, E_SIG, E_FORMAT, E_TYPE: „Datei beschädigt – bitte später erneut versuchen“, Code klein dabei.
+  E_KEY: „keine Berechtigung“. E_OLD: still verwerfen. Ohne Netz und nicht lokal: „nicht offline
+  verfügbar“. Unbekannte Schema-Fassung: „App aktualisieren“.
+
+9. Gemerkter Zustand (store, nur lokal)
+  je Dataset: gesehen (Element-Nr), letzter Besuch, Sortierung, offen gelassene Ordner,
+  offline-Wahl; allgemein: Ansicht Liste/Tabelle, Suche über alle ja/nein.
+
+10. Später
+  - Rückfrage zu einem Element (Nachrichtenart BELEG_FRAGE über den Rückkanal), z. B. das
+    Steuerbüro fragt zu einer Rechnung; dann rueckkanal ["BELEG_FRAGE"] im Manifest.
+  - Hinweise aus der Startdatei (Fristen) im Kopf des Datasets.
+  - Mehrsprachigkeit: Texte von Anfang an über eine Textdatei (de zuerst).
+
+11. Was der Export dafür liefern muss
+  Im Index alle Felder aus Spezifikation 5.2, insbesondere: gliederung mit Bezeichnungen und
+  Reihenfolge, Namen (nicht nur Codes) für Art, Partner, Kennzeichen, die Größe der
+  ungepackten Datei, Dateinamen wie im zip, neu und ersetzt_durch. In der Startdatei je Dataset
+  Name der Sicht, Zeitraum über den Index, Freigabe bis, Stand und neu_seit.

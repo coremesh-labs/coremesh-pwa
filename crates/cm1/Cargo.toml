@@ -1,0 +1,24 @@
+[package]
+name = "cm1"
+description = "Ablageformat cm1 (Spezifikation Fassung 1): Umschlag, Schlüssel, Prüfung, Modelle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["crypto"]
+# Prüfen, Entschlüsseln, Verschlüsseln (für Hülle und Werkzeuge). Ohne Feature nur Modelle und Umschlag
+# (reicht dem Modul, das keine Schlüssel sieht).
+crypto = ["dep:ed25519-dalek", "dep:age", "dep:flate2", "dep:sha2", "dep:base64"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ed25519-dalek = { version = "2", optional = true }
+age = { version = "0.11", optional = true }
+flate2 = { version = "1", optional = true }
+sha2 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+
+[dev-dependencies]
+secrecy = "0.10"
