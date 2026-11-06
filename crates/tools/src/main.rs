@@ -17,6 +17,7 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 mod vorgang_fixture;
+mod mieter_fixture;
 
 pub(crate) type Res<T> = Result<T, Box<dyn Error>>;
 
@@ -162,6 +163,8 @@ fn fixture(args: &[String]) -> Res<()> {
     }
     // Datenset „Vorgang“ (Modul vorgang, Objektdaten process/1).
     let (vorgang_ds, vorgang_key) = vorgang_fixture::dataset(&ablage, &srv)?;
+    // Datasets „Mieter“ (Modul mieter: Mietverhältnis und Haus).
+    let mieter_sets = mieter_fixture::datasets(&ablage, &srv)?;
 
     // Datendateien (o/<sha256>) und Elemente.
     struct Spec {
@@ -309,7 +312,10 @@ fn fixture(args: &[String]) -> Res<()> {
         schluessel: vec![
             KeyEntry { key: ds_key.clone(), secret: ds_secret.clone(), dataset: ds_id.clone(), gueltig_ab: "2026-11-06".into() },
             vorgang_key,
-        ],
+        ]
+        .into_iter()
+        .chain(mieter_sets.iter().map(|(_, k)| k.clone()))
+        .collect(),
         datasets: vec![vorgang_ds, StartDataset {
             id: ds_id.clone(),
             name: index.name.clone(),
@@ -323,7 +329,10 @@ fn fixture(args: &[String]) -> Res<()> {
             neu_seit: "2026-11-01T00:00:00Z".into(),
             freigabe_bis: "2028-04-30".into(),
             modul: EXPLORER_ID.into(),
-        }],
+        }]
+        .into_iter()
+        .chain(mieter_sets.iter().map(|(d, _)| d.clone()))
+        .collect(),
         modules: module_entries.iter().map(|m| m.id.clone()).collect(),
         hinweise: vec![],
     };

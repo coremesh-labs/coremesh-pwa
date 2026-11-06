@@ -1,0 +1,10 @@
+{
+  "id": "mieter",
+  "name": "Mietverhältnis",
+  "version": "1.0.0",
+  "einstieg": "mieter.js",
+  "content_types": ["application/vnd.coremesh.tenant+json;v=1", "application/vnd.coremesh.property+json;v=1"],
+  "sichtarten": ["MIETER_VERTRAG", "MIETER_OBJEKT"],
+  "rueckkanal": [],
+  "api": 1
+}
