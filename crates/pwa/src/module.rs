@@ -25,7 +25,7 @@ fn read_entry(za: &mut zip::ZipArchive<Cursor<Vec<u8>>>, name: &str) -> Result<V
     Ok(out)
 }
 
-/// Lädt und startet das Modul-Modul (Namespace-Objekt mit `mount`).
+/// Lädt und startet das Modul (Namespace-Objekt mit `mount`).
 pub async fn load(st: &Shared, entry: &ModuleEntry) -> Result<JsValue, String> {
     let zip_bytes = ablauf::fetch_module_package(st, &entry.ref_).await?;
     let mut za = zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| e.to_string())?;
@@ -71,30 +71,35 @@ fn set_method(host: &js_sys::Object, name: &str, f: Closure<dyn Fn(JsValue, JsVa
     f.forget();
 }
 
-/// Die Schnittstelle der Hülle für Module (Ablage_Ablauf_Konzept.txt, 4.4):
-/// datasets(), index(id), open(id, ref), save(name, bytes, mime).
-pub fn make_host(st: &Shared) -> JsValue {
+/// Die Schnittstelle der Hülle für ein Modul (Ablage_Ablauf_Konzept.txt, 4.4):
+/// datasets(), index(id), open(id, ref), save(name, bytes, mime), store_get(key), store_put(key, value).
+/// Der lokale Speicher ist je Modul getrennt; Datasets und Dateien nur des Moduls.
+pub fn make_host(st: &Shared, module: &str) -> JsValue {
     let host = js_sys::Object::new();
+    let m = module.to_string();
 
     let s = st.clone();
+    let mm = m.clone();
     set_method(
         &host,
         "datasets",
         Closure::new(move |_: JsValue, _: JsValue, _: JsValue| {
-            let json = datasets_json(&s);
+            let json = datasets_json(&s, &mm);
             future_to_promise(async move { Ok(JsValue::from_str(&json)) }).into()
         }),
     );
 
     let s = st.clone();
+    let mm = m.clone();
     set_method(
         &host,
         "index",
         Closure::new(move |id: JsValue, _: JsValue, _: JsValue| {
             let s = s.clone();
+            let mm = mm.clone();
             let id = id.as_string().unwrap_or_default();
             future_to_promise(async move {
-                let ds = ablauf::explorer_datasets(&s.borrow())
+                let ds = ablauf::module_datasets(&s.borrow(), &mm)
                     .into_iter()
                     .find(|d| d.id == id)
                     .ok_or_else(|| JsValue::from_str("kein Dataset für dieses Modul"))?;
@@ -112,15 +117,19 @@ pub fn make_host(st: &Shared) -> JsValue {
     );
 
     let s = st.clone();
+    let mm = m.clone();
     set_method(
         &host,
         "open",
         Closure::new(move |id: JsValue, r: JsValue, _: JsValue| {
             let s = s.clone();
+            let mm = mm.clone();
             let id = id.as_string().unwrap_or_default();
             let r = r.as_string().unwrap_or_default();
             future_to_promise(async move {
-                let (data, ct, name) = ablauf::open_element(&s, &id, &r).await.map_err(|e| JsValue::from_str(&e))?;
+                let (data, ct, name) = ablauf::open_element(&s, &mm, &id, &r)
+                    .await
+                    .map_err(|e| JsValue::from_str(&e))?;
                 let obj = js_sys::Object::new();
                 let _ = js_sys::Reflect::set(&obj, &"data".into(), &js_sys::Uint8Array::from(&data[..]));
                 let _ = js_sys::Reflect::set(&obj, &"content_type".into(), &JsValue::from_str(&ct));
@@ -145,13 +154,36 @@ pub fn make_host(st: &Shared) -> JsValue {
         }),
     );
 
+    // Lokaler Speicher des Moduls (nur auf diesem Gerät, Schlüssel je Modul getrennt).
+    let mm = m.clone();
+    set_method(
+        &host,
+        "store_get",
+        Closure::new(move |key: JsValue, _: JsValue, _: JsValue| {
+            let k = format!("mod.{}.{}", mm, key.as_string().unwrap_or_default());
+            let v = net::store_get(&k).map(|s| JsValue::from_str(&s)).unwrap_or(JsValue::UNDEFINED);
+            future_to_promise(async move { Ok(v) }).into()
+        }),
+    );
+
+    let mm = m.clone();
+    set_method(
+        &host,
+        "store_put",
+        Closure::new(move |key: JsValue, value: JsValue, _: JsValue| {
+            let k = format!("mod.{}.{}", mm, key.as_string().unwrap_or_default());
+            let ok = net::store_set(&k, &value.as_string().unwrap_or_default());
+            future_to_promise(async move { Ok(JsValue::from_bool(ok)) }).into()
+        }),
+    );
+
     host.into()
 }
 
-/// Datasets für das Modul: Name, Sicht, Stand, Freigabe, offline verfügbar (lokaler Index vorhanden).
-fn datasets_json(st: &Shared) -> String {
+/// Datasets des Moduls: Name, Sicht, Stand, Freigabe, offline verfügbar (lokaler Index vorhanden).
+fn datasets_json(st: &Shared, module: &str) -> String {
     let s = st.borrow();
-    let list: Vec<serde_json::Value> = ablauf::explorer_datasets(&s)
+    let list: Vec<serde_json::Value> = ablauf::module_datasets(&s, module)
         .iter()
         .map(|d| {
             let offline = s.indexes.contains_key(&d.id);
