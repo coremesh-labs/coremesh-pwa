@@ -1,0 +1,318 @@
+Konzept: Vorgänge als Objektdaten (JSON) in der Ablage – Fassung 1 (2026-11-06, F1–F4 entschieden)
+
+Gehört zu Ablage_Dateiformat_Konzept.txt (7.2 Bezugsregel BETEILIGTE, 7.9 Objektdaten),
+Ablage_Format_Spezifikation.txt (Bytes, Index, Schlüssel), Ablage_Ablauf_Konzept.txt
+(Schnittstelle der Module) und Vorgaenge_Konzept.txt (Fachmodell). Ziel: ein PWA-Modul
+„Vorgänge“ kann gegen dieses Konzept gebaut werden, ohne den Server zu kennen.
+
+0. Kurzfassung
+  - Ein Vorgang wird nicht mehr als PDF ins DMS gelegt (refresh_call Process.storeSheet in der
+    Sichtart VORGANG entfällt), sondern das Fachmodul liefert seine Daten als JSON:
+    Content-Type application/vnd.coremesh.process+json;v=1.
+  - Je Vorgang ein Dataset (wie bisher, Schlüssel je Vorgang). Im Index: das JSON-Element
+    „Vorgang“ und daneben die Dokumente des Vorgangs (PDF, Fotos) als normale Elemente.
+  - Das JSON verweist auf Dokumente nur über ihren ref ("o/<sha256>"); Schlüssel, Größe und
+    Kennzeichen stehen im Index. Das Modul öffnet sie über die Hülle (open(dataset, ref)).
+  - Was hinausgeht, bestimmt ein Umfang (Katalog am Server, je Sicht), nicht die App.
+    Texte „nur lokal“ gehen nie hinaus.
+  - Jede Änderung des Vorgangs ergibt ein neues JSON-Element; das alte wird „ersetzt“ und
+    bleibt im Index (Verlauf der Stände). Unveränderter Inhalt ergibt dieselbe Datei.
+  - Fassung 1 ist nur lesend. Rückmeldungen aus der App (Rückkanal) sind in Abschnitt 9
+    vorbereitet, aber nicht Teil von v=1.
+
+1. Begriffe
+  Vorgang        process__process mit Partnern, Schritten, Verlauf, Texten, Dokumenten,
+                 Teilvorgängen (Vorgaenge_Konzept.txt).
+  Objektdaten    JSON-Abbild eines Fachobjekts für Dritte; nicht die Datenbankzeile, sondern eine
+                 eigene, stabile Darstellung (Feldnamen deutsch, klein, mit _).
+  Umfang         welche Teile ein Abbild enthält (Abschnitt 5). Je Sicht ein Umfang.
+  Stand          Zeitpunkt der letzten fachlichen Änderung des Vorgangs (nicht der Erzeugung).
+
+2. Ort in der Ablage
+  Startdatei → Dataset „Vorgang AF-2026-0001 Wasserschaden Küche“ (modul "vorgang")
+             → Index (i/ds/<id>) mit den Elementen:
+                 nr 1  content_type …process+json;v=1   titel „Vorgang AF-2026-0001“  (Stand 1)
+                 nr 2  application/pdf  „Schadenmeldung Versicherung“
+                 nr 3  image/jpeg       „Foto Küche Wand“
+                 nr 4  …process+json;v=1  (Stand 2) – nr 1 hat kennzeichen ERSETZT, ersetzt_durch 4
+  - Das aktuelle Abbild ist das einzige process+json-Element ohne ersetzt_durch. Gibt es
+    mehrere (Fehler), gilt das mit dem größten nr.
+  - Element-Felder für das Abbild: ordner "" (oberste Ebene), name "vorgang.json",
+    titel „Vorgang <Nummer>“, datum = Stand (Datum), art {code "VORGANG", name "Vorgang"},
+    partner = Hauptpartner des Vorgangs (falls einer), packing gzip.
+  - Dokumente kommen wie bisher über die Regeln der Sicht („verknüpft mit dem Vorgang“) in den
+    Index. Das Abbild nennt sie zusätzlich in „dokumente“ mit fachlicher Zuordnung (Abschnitt 4.9).
+  - Teilvorgänge stehen im Abbild des übergeordneten Vorgangs (Abschnitt 4.11), nicht als
+    eigenes Dataset (eigene Datasets nur, wenn die Sicht sie eigens auswählt).
+
+3. Allgemeine Regeln für das JSON (gelten für alle Objektdaten, nicht nur Vorgänge)
+  3.1 Kodierung: UTF-8, ein JSON-Objekt, keine Kommentare. Schlüsselnamen klein, deutsch, mit _.
+  3.2 Kopf jedes Abbilds:
+        "schema":  "process/1"        Art und Fassung (entspricht dem Content-Type)
+        "sprache": "de"               Sprache der Namen und Texte
+        "stand":   "2026-11-06T09:14:00Z"  letzte fachliche Änderung (RFC 3339, UTC)
+        "quelle":  {"system": "coremesh", "buchungskreis": {"code": "2000", "name": "…"}}
+      Kein Erzeugungszeitpunkt im Inhalt: gleicher Stand ⇒ gleiche Bytes ⇒ gleicher Hash ⇒ keine
+      neue Datei (der Export vergleicht den Hash).
+  3.3 Datum: "JJJJ-MM-TT" (Kalendertag, ohne Zeitzone). Zeitpunkt: RFC 3339 in UTC mit "Z".
+      Die App zeigt Zeitpunkte in der Zeitzone des Geräts, Daten unverändert.
+  3.4 Codes und Namen: Katalogwerte immer als {"code": "…", "name": "…"}.
+      - name ist zum Anzeigen (in "sprache"), code zum Vergleichen, Filtern, für Symbole.
+      - Die App leitet aus Codes keine Bedeutung ab – außer aus den festen Klassen, die dieses
+        Konzept ausdrücklich nennt (status.klasse, schritt.status, ampel). Alle anderen Codes
+        (Vorgangsart, Rolle, Textkategorie …) sind Katalogwerte des Kunden und frei.
+  3.5 Fehlende Werte: Feld fehlt ⇔ unbekannt bzw. leer. Der Server lässt leere Felder weg (kein
+      null, kein ""); leere Listen werden ebenfalls weggelassen. Die App muss jedes Feld außer
+      schema, stand und vorgang.nummer als optional behandeln.
+  3.6 Unbekannte Felder ignorieren (Format_Spezifikation 8). Unbekannte Werte einer festen Klasse
+      wie „unbekannt“ anzeigen (neutral), nicht abbrechen.
+  3.7 Texte: Felder mit Endung _md sind Markdown (CommonMark ohne HTML; Überschriften,
+      Absätze, Listen, fett/kursiv, Links nur https und mailto). Rohes HTML im Text ist als Text
+      anzuzeigen. Alle übrigen Zeichenketten sind reiner Text.
+  3.8 Personen: Geschäftspartner als {"id": "…", "name": "…"} (id = Partnernummer, stabil;
+      zum Zusammenführen über Vorgänge hinweg). Benutzer der Verwaltung nur mit Anzeigenamen
+      {"name": "…"} – keine Kennungen, keine E-Mail, außer der Umfang sagt es (5).
+  3.9 Verweise auf Dateien: {"ref": "o/<sha256>"} – nur auf Elemente desselben Datasets, die im
+      Index stehen. Fehlt der ref im Index (z. B. gelöscht), zeigt die App „nicht mehr
+      verfügbar“. Kein Verweis auf andere Datasets, keine URL.
+  3.10 Reihenfolge: Listen kommen in der Reihenfolge, in der sie anzuzeigen sind. Die App sortiert
+      nicht um (darf aber Filter anbieten).
+  3.11 Größe: ein Abbild höchstens 1 MB entpackt (der Umfang begrenzt den Verlauf); größer ⇒
+      der Export kürzt den Verlauf und setzt "verlauf_gekuerzt": true.
+
+4. Aufbau process/1
+  {
+    "schema": "process/1", "sprache": "de", "stand": "…", "quelle": {…},
+    "umfang": {"code": "MIETER", "name": "Mieter", "teile": ["beschreibung", "schritte", …]},
+    "vorgang": { … Abschnitt 4.1–4.11 … }
+  }
+
+  4.1 Kopf des Vorgangs
+    nummer          "AF-2026-0001"            Pflicht; stabil, eindeutig im Buchungskreis
+    kurz            "Wasserschaden Küche"     Kurzbezeichnung (Ordnername)
+    betreff         "Wasserschaden Küche Whg 16, Leitung hinter der Spüle"
+    art             {code, name}              Vorgangsart (Katalog, frei)
+    perspektive     {code, name}              z. B. Eigentümer / Mieter (frei)
+    prioritaet      {code, name}              frei
+    status          {code, name, klasse}      klasse fest: OFFEN | WARTET | ERLEDIGT
+                                              (Server: OPEN | WAITING | CLOSED)
+    erledigung      {code, name}              nur bei klasse ERLEDIGT
+    ampel           GRUEN | GELB | ROT        fest; Fristenlage am Server zum Stand
+    wartet_auf      Text                      bei klasse WARTET
+    naechster_schritt Text
+    beschreibung_md Markdown
+    zustaendig      {name}                    Sachbearbeiter (nur Name, Umfang „zustaendig“)
+    vertretung      {name}
+    uebergeordnet   {nummer, betreff}         wenn der Vorgang ein Teilvorgang ist
+
+  4.2 Daten (Objekt "daten", alle als Datum)
+    eroeffnet, stichtag (Ereignisdatum, z. B. Schadentag), eingang_bestaetigt,
+    bestaetigung_bis, antwort_bis, wiedervorlage, naechste_frist, abgeschlossen.
+    Die App zeigt naechste_frist hervorgehoben; überschritten ⇔ naechste_frist < heute und
+    klasse ≠ ERLEDIGT (die App rechnet das selbst, weil sie offline sein kann; ampel ist der
+    Stand des Servers).
+
+  4.3 Bezüge (Liste "bezuege", je {art, id, name})
+    art fest: PARTNER | VERTRAG | MIETOBJEKT | WIRTSCHAFTSEINHEIT | ANLAGE.
+    Beispiel {"art": "MIETOBJEKT", "id": "FH99-16", "name": "Faustheim 99, Whg 16"}.
+    Nur zur Anzeige und zum Gruppieren; die App kann daraus keine Daten nachladen.
+
+  4.4 Beteiligte (Liste "beteiligte")
+    {rolle {code, name}, partner {id, name}, notiz, kontakt {telefon, email, adresse}}
+    kontakt nur mit Umfang „kontakt“ (z. B. Handwerker braucht das Telefon der Mieterin).
+    "ich": true markiert den Eintrag, der zum Teilnehmer gehört, für den das Dataset gebaut
+    ist – nur wenn das Dataset genau einen Empfänger-Partner hat (Bezugsregel PARTNER bzw.
+    BETEILIGTE mit eigenem Dataset); sonst fehlt das Feld.
+
+  4.5 Schritte (Liste "schritte")
+    {nr, name, status, faellig, erledigt, pflicht, rolle_hinweis, notiz, pruefliste_md}
+    status fest: OFFEN | ERLEDIGT | ENTFALLEN (Server: Schrittstatus). pflicht: bool.
+    Anzeige als Checkliste in nr-Reihenfolge; Fortschritt = erledigte Pflichtschritte /
+    Pflichtschritte (ENTFALLEN zählt nicht).
+
+  4.6 Texte (Liste "texte")
+    {kategorie {code, name}, position, inhalt_md, geaendert (Datum)}
+    Reihenfolge der Kategorien wie am Server. Nur öffentliche Texte (public_only): Kategorien
+    oder Texte „nur lokal“ (Anmerkung, Telefonnotiz, Prüfvermerk …) gehen nie hinaus – auch
+    nicht mit vollem Umfang. Je Kategorie und Position eine Fassung in "sprache".
+
+  4.7 Verlauf (Liste "verlauf", älteste zuerst)
+    {nr, zeit (Zeitpunkt), art {code, name, system}, text, von {name}}
+    nr: laufende Nummer des Eintrags am Server, stabil und steigend – die App erkennt daran
+    neue Einträge („neu seit dem letzten Öffnen“). system: true bei Systemeinträgen
+    (Statuswechsel, Schritt erledigt); die App darf sie einklappen.
+    Welche Eintragsarten hinausgehen, steht am Katalog „Arten der Verlaufseinträge“ (neues
+    Feld „öffentlich“, Abschnitt 6.2) – nicht in der App. Lücken in nr sind daher normal.
+
+  4.8 Fristen-Zusammenfassung (Objekt "fristen", optional, nur Anzeige)
+    {ueberfaellig: Anzahl, naechste: {datum, was}} – vom Server berechnet zum Stand.
+
+  4.9 Dokumente (Liste "dokumente")
+    {ref, titel, datum, art {code, name}, content_type, schritt (nr), verlauf (nr), rolle}
+    - ref zeigt auf ein Element desselben Index (3.9). Größe, Schlüssel, Kennzeichen (storniert,
+      ersetzt) stehen dort; die App liest sie aus dem Index, nicht aus dem JSON.
+    - schritt / verlauf ordnen ein Dokument einem Schritt bzw. Verlaufseintrag zu (z. B. Foto
+      zum Eintrag „Ortstermin“). Fehlt beides: Dokument des Vorgangs allgemein.
+    - Ein Dokument, das im DMS am Vorgang hängt, aber von der Sicht nicht ausgewählt ist,
+      erscheint nicht (der Export filtert: nur Dokumente mit Element im Index).
+
+  4.10 Kennzahlen (Objekt "kennzahlen", optional, frei)
+    Liste {code, name, wert, einheit} für fachliche Werte einer Vorgangsart (z. B. Schadenhöhe,
+    Versicherungsnummer). Herkunft: Zusatzfelder der Vorgangsart (Katalog), nicht fest im Code.
+    Die App zeigt sie als Tabelle Name – Wert Einheit.
+
+  4.11 Teilvorgänge (Liste "teilvorgaenge")
+    Je Teilvorgang ein Objekt mit demselben Aufbau wie "vorgang" (rekursiv), gekürzt nach Umfang:
+      KURZ   nur nummer, kurz, betreff, art, status, ampel, daten.naechste_frist, daten.abgeschlossen
+      VOLL   wie der Vorgang selbst (ohne Dokumente anderer Datasets)
+    Tiefe höchstens 5 Ebenen; die App zeigt sie als aufklappbaren Baum.
+
+  4.12 Beispiel (Testbestand, gekürzt)
+  {
+    "schema": "process/1", "sprache": "de", "stand": "2026-11-06T09:14:00Z",
+    "quelle": {"system": "coremesh", "buchungskreis": {"code": "2000", "name": "Hausverwaltung Faust"}},
+    "umfang": {"code": "MIETER", "name": "Mieter",
+               "teile": ["beschreibung", "beteiligte", "schritte", "texte", "verlauf", "dokumente", "teilvorgaenge"]},
+    "vorgang": {
+      "nummer": "AF-2026-0003", "kurz": "Wasserschaden Küche",
+      "betreff": "Wasserschaden Küche Whg 16, Leitung hinter der Spüle",
+      "art": {"code": "SCHADEN", "name": "Schadensfall"},
+      "status": {"code": "WAIT_INS", "name": "wartet auf Versicherung", "klasse": "WARTET"},
+      "ampel": "GELB", "wartet_auf": "Rückmeldung der Versicherung",
+      "naechster_schritt": "Trocknung beauftragen",
+      "beschreibung_md": "Am **3. November** Wasser unter der Spüle gemeldet.",
+      "zustaendig": {"name": "Faust"},
+      "daten": {"eroeffnet": "2026-11-03", "stichtag": "2026-11-03", "naechste_frist": "2026-11-10"},
+      "bezuege": [{"art": "MIETOBJEKT", "id": "FH99-16", "name": "Faustheim 99, Whg 16"}],
+      "beteiligte": [
+        {"rolle": {"code": "MIETER", "name": "Mieter"}, "partner": {"id": "100231", "name": "Margarete (Gretchen)"}, "ich": true},
+        {"rolle": {"code": "HANDWERKER", "name": "Handwerker"}, "partner": {"id": "300017", "name": "Valentin Sanitär"}}],
+      "schritte": [
+        {"nr": 1, "name": "Schaden aufnehmen", "status": "ERLEDIGT", "erledigt": "2026-11-03", "pflicht": true},
+        {"nr": 2, "name": "Versicherung melden", "status": "ERLEDIGT", "erledigt": "2026-11-04", "pflicht": true},
+        {"nr": 3, "name": "Trocknung", "status": "OFFEN", "faellig": "2026-11-10", "pflicht": true}],
+      "texte": [{"kategorie": {"code": "INQUIRY", "name": "Anfrage"}, "position": 1,
+                 "inhalt_md": "Bitte um Termin für den Gutachter.", "geaendert": "2026-11-04"}],
+      "verlauf": [
+        {"nr": 1, "zeit": "2026-11-03T08:02:00Z", "art": {"code": "SYS", "name": "System", "system": true}, "text": "Vorgang eröffnet"},
+        {"nr": 4, "zeit": "2026-11-04T13:30:00Z", "art": {"code": "VISIT", "name": "Ortstermin"}, "text": "Feuchte Wand bestätigt", "von": {"name": "Faust"}}],
+      "dokumente": [
+        {"ref": "o/9f2c…", "titel": "Foto Küche Wand", "datum": "2026-11-04", "content_type": "image/jpeg", "verlauf": 4},
+        {"ref": "o/41ab…", "titel": "Schadenmeldung Versicherung", "datum": "2026-11-04",
+         "art": {"code": "SCHREIBEN", "name": "Schreiben"}, "content_type": "application/pdf", "schritt": 2}]
+    }
+  }
+
+5. Umfang (was hinausgeht) – Katalog „Umfänge der Objektdaten“ je Buchungskreis
+  Ein Dataset wird mit einem Schlüssel für alle seine Teilnehmer verschlüsselt; deshalb gilt
+  der Umfang je Sicht (nicht je Teilnehmer). Unterschiedliche Empfänger = unterschiedliche
+  Sichten derselben Sichtart (z. B. „Schäden für Mieter“, „Schäden für Handwerker“).
+  Felder des Umfangs (alle ja/nein bzw. Auswahl, Vorschläge in setup-company):
+    beschreibung, zustaendig, beteiligte (KEINE | NAMEN | MIT_KONTAKT), schritte, texte,
+    verlauf (KEINE | SYSTEM | OEFFENTLICH | ALLE_OEFFENTLICHEN_UND_SYSTEM), verlauf_max (Anzahl,
+    leer = alle), dokumente, kennzahlen, teilvorgaenge (KEINE | KURZ | VOLL).
+  Vorschläge:
+    MIETER       beschreibung, beteiligte NAMEN, schritte, texte, verlauf OEFFENTLICH, dokumente,
+                 teilvorgaenge KURZ
+    HANDWERKER   beschreibung, beteiligte MIT_KONTAKT, schritte, verlauf OEFFENTLICH, dokumente
+    BEIRAT       alles außer kontakt, teilvorgaenge VOLL
+    EIGENTUEMER  wie BEIRAT
+  Der Code des Umfangs steht im Abbild ("umfang"), damit die App z. B. leere Abschnitte nicht
+  als „keine Daten“, sondern als „nicht freigegeben“ zeigen kann: Abschnitt fehlt UND Umfang
+  schließt ihn aus ⇒ nicht anzeigen; Abschnitt fehlt, Umfang schließt ihn ein ⇒ „keine“.
+  Dazu liefert das Abbild "umfang": {code, name, teile: ["beschreibung", "schritte", …]}.
+
+6. Server: Fachmodul process (Process.exportData) und Export
+  6.1 Aktion Process.exportData (Systemaufruf vom Export, mit den Rechten des Auftraggebers)
+      Eingabe: {id: "<cc>|<nummer>", umfang: {…Felder aus 5…}, partner: "<id>" (optional, für
+               "ich"), dokumente: [{doc_id, ref}]  – die Dokumente, die der Export schon im
+               Index hat}
+      Ausgabe: {content_type: "application/vnd.coremesh.process+json;v=1", name: "vorgang.json",
+               titel, datum (Stand), stand, data: {…Abschnitt 4…}}
+      - Das Fachmodul kennt die DMS-Verknüpfung (doc_id ↔ Schritt/Verlauf) und setzt in
+        "dokumente" die refs aus der Eingabe; Dokumente ohne ref lässt es weg.
+      - Deterministisch: gleiche Eingabe und gleicher Stand ⇒ gleiche Bytes (Schlüssel
+        sortiert, keine Erzeugungszeit).
+      - Liest wie print_public (Texte public_only); Verlauf nach Eintragsart „öffentlich“.
+  6.2 Neue Katalogfelder im Modul process
+      - Arten der Verlaufseinträge: „öffentlich“ (geht in Objektdaten hinaus). Vorschläge:
+        Systemeinträge ja, Notiz/Anruf nein, Nachricht/Ortstermin ja.
+      - Vorgangsart: Zusatzfelder für Kennzahlen (4.10) – Liste {code, name, einheit, Feldtyp};
+        Werte am Vorgang. (Kann nach v=1 kommen; bis dahin fehlt "kennzahlen".)
+      - Aktion Process.participants {id} → [{rolle, partner_id}] für die Bezugsregel BETEILIGTE.
+  6.3 Export (Modul export)
+      - Sichtart: neues Feld export_call (Object.Aktion, z. B. Process.exportData), Umfang an der
+        Sicht (Lookup auf den Katalog aus 5). VORGANG: refresh_call leer, export_call gesetzt
+        (Aktualisierung über setup-company; vorhandene PDFs im DMS bleiben, storeSheet bleibt als
+        Handaktion).
+      - Ablauf je Dataset beim Schreiben: Dokumente wie bisher als Elemente; dann exportData mit
+        deren {doc_id, ref}; JSON als Element (gzip) siegeln; Hash gleich dem letzten Abbild ⇒
+        nichts tun, sonst neues Element, das alte bekommt ERSETZT/ersetzt_durch.
+      - Auslöser: Änderungszeiger des Datasets = Ereignisjournal des Vorgangs (process__event,
+        seq) bzw. changed_at; Rhythmus „bei Änderung“ (wie heute).
+      - Ziel kein Objektspeicher (Verzeichnis, zip): das JSON wird als Datei vorgang.json
+        mitgeschrieben – für Dritte lesbar, ohne PDF.
+  6.4 Bezugsregel BETEILIGTE (Konzept 7.2)
+      Freigabe mit Regel BETEILIGTE und Liste Vorgangsrollen (z. B. Rolle MIETER der App ↔
+      Vorgangsrollen REQUESTER, TENANT). Ein Teilnehmer sieht das Dataset, wenn sein
+      Geschäftspartner in Process.participants mit einer der Rollen steht. Fällt er heraus
+      (Partner entfernt), gilt es wie ein Entzug: Schlüsselwechsel.
+
+7. App: Modul „Vorgänge“ (id "vorgang")
+  7.1 Manifest: id "vorgang", Name „Vorgänge“, content_types
+      ["application/vnd.coremesh.process+json;v=1"], sichtarten ["VORGANG"], nachrichten [] (v=1).
+      Zuordnung: Datasets mit modul "vorgang" (Vorschlag der Freigabe für Sichtart VORGANG).
+      Öffnet der Explorer ein process+json-Element, gibt die Hülle es an dieses Modul (open).
+  7.2 Liste: je Dataset das aktuelle Abbild (2) laden; Zeile: nummer, kurz, status.name,
+      ampel, daten.naechste_frist, Zähler „neu“. Filter: klasse (offen/wartet/erledigt), art,
+      Bezug. Sortierung: überfällig zuerst, dann naechste_frist, dann nummer.
+  7.3 Detail: Kopf (4.1/4.2), Fortschritt der Schritte, Abschnitte in dieser Reihenfolge:
+      Beschreibung, Schritte, Beteiligte, Texte, Verlauf (neueste oben schaltbar), Dokumente
+      (Vorschaubild für image/*, sonst Symbol; Öffnen über die Hülle), Teilvorgänge.
+  7.4 Neu seit dem letzten Öffnen (lokal je Gerät gespeichert: zuletzt gesehen stand und
+      höchste verlauf.nr): neu = verlauf.nr größer, Schritte mit geändertem status,
+      Dokumente mit unbekanntem ref, Statuswechsel. Kein Abgleich mit dem Server nötig.
+  7.5 Ältere Stände: ersetzte Abbilder im Index als „Stand vom …“ anbietbar (nur lesen).
+  7.6 Offline: das aktuelle Abbild und die Vorschaubilder vorab holen (prefetch); PDFs auf
+      Wunsch.
+  7.7 Fehler: schema unbekannt ⇒ „Neuere Fassung – App aktualisieren“, Rohansicht verbergen.
+      JSON ungültig ⇒ Meldung mit Nummer des Elements. ref fehlt ⇒ „nicht mehr verfügbar“.
+      Kennzeichen am Element des Abbilds (z. B. gesperrt, gelöscht) wie im Explorer anzeigen.
+  7.8 Datenschutz: die App speichert Abbilder nur verschlüsselt wie alle Daten der Hülle;
+      Sperren des Teilnehmers löscht sie (Ablauf_Konzept).
+
+8. Fassungen des Schemas
+  - Neue optionale Felder, neue Codes in freien Katalogen, neue Werte in festen Klassen mit
+    Rückfall „unbekannt“: bleibt process/1, ;v=1.
+  - Bedeutung eines Felds ändert sich, Pflichtfeld kommt dazu, feste Klasse wird umgebaut:
+    process/2, ;v=2. Der Export schreibt dann eine Übergangszeit beide Fassungen (zwei Elemente),
+    wenn der Umfang es verlangt („v1 weiter liefern bis …“).
+  - Maschinenlesbares Schema: JSON Schema (2020-12) in coremesh-erp pkg/cm1/testdata/schema/
+    process.v1.json; Prüfdateien (gültig/ungültig) daneben, die PWA prüft sich dagegen.
+
+9. Ausblick Rückkanal (nicht v=1, nur damit v=1 nichts verbaut)
+  Nachrichtenarten im Manifest, an den Server über den Rückkanal (srv-box):
+    process.rueckmeldung  {nummer, stand, text_md, anhaenge [Datei]} → Text der Kategorie
+                          FEEDBACK bzw. Verlaufseintrag, Anhänge ins DMS am Vorgang
+    process.foto          {nummer, schritt?, datei} → Dokument am Vorgang
+    process.schritt_erledigt {nummer, schritt, notiz} → nur Rolle HANDWERKER, als Vorschlag
+                          (Sachbearbeiter bestätigt)
+  "stand" in der Nachricht: der Server erkennt, ob der Absender einen alten Stand sah.
+  Freigabe je Sicht: welche Nachrichtenarten erlaubt sind (Katalog), nicht in der App.
+
+10. Bau-Reihenfolge
+  1. process: Process.exportData (Abschnitt 4 ohne kennzahlen), Feld „öffentlich“ an den
+     Eintragsarten, Process.participants; Tests mit Faust-Bestand.
+  2. Schema-Datei process.v1.json + Prüfdateien in pkg/cm1/testdata.
+  3. export: Katalog Umfänge, export_call an der Sichtart, Umfang an der Sicht, Ablauf 6.3,
+     VORGANG umstellen, BETEILIGTE.
+  4. Prüfablage (Ablage-Konzept 7.11) mit einem Vorgang samt Foto, Teilvorgang, zwei Ständen.
+  5. PWA-Modul „vorgang“ (anderer Rechner) gegen Prüfablage und Schema.
+  6. Danach: Kennzahlen, Rückkanal.
+
+11. Entscheidungen (2026-11-06, nach Vorschlag; „wir werden sehen“ – nach dem ersten Einsatz prüfen)
+  F1 Umfang je Sicht. Unterschiedliche Empfänger = eigene Sichten derselben Sichtart.
+  F2 Teilvorgänge im Abbild des Hauptvorgangs; keine eigenen Datasets je Teilvorgang.
+  F3 Sachbearbeiter mit Namen (Umfang „zustaendig“, Vorschlag ja bei Mieter/Handwerker).
+  F4 Verlauf für Mieter nur mit Eintragsarten „öffentlich“; Systemeinträge nur, wenn ihre
+     Eintragsart öffentlich ist.
