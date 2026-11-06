@@ -46,6 +46,16 @@ pub fn store_set(key: &str, value: &str) -> bool {
     storage().map(|s| s.set_item(key, value).is_ok()).unwrap_or(false)
 }
 
+/// Entfernt alle Einträge, deren Schlüssel mit `prefix` beginnt.
+pub fn store_clear_prefix(prefix: &str) {
+    let Some(s) = storage() else { return };
+    let n = s.length().unwrap_or(0);
+    let keys: Vec<String> = (0..n).filter_map(|i| s.key(i).ok().flatten()).filter(|k| k.starts_with(prefix)).collect();
+    for k in keys {
+        let _ = s.remove_item(&k);
+    }
+}
+
 /// Liefert die Datei dem Benutzer (Download-Ordner).
 pub fn save_file(name: &str, bytes: &[u8], mime: &str) -> Result<(), String> {
     let parts = js_sys::Array::new();
