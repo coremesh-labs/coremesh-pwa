@@ -36,7 +36,7 @@ rm -f build/explorer.zip
 # App: web/ ohne Prüfablage und Einrichtungslink
 mkdir -p build/app
 cp -r web/index.html web/sw.js web/manifest.webmanifest web/style.css web/icon.svg build/app/
-mkdir -p build/app/pkg/pwa && cp web/pkg/pwa/pwa.js web/pkg/pwa/pwa_bg.wasm build/app/pkg/pwa/
+mkdir -p build/app/pkg && cp -r web/pkg/pwa build/app/pkg/ && rm -f build/app/pkg/pwa/*.d.ts
 rm -f build/app.zip
 (cd build/app && zip -q -X -r ../app.zip .)
 

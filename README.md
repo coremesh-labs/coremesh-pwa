@@ -33,6 +33,21 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 powershell -ExecutionPolicy Bypass -File scripts\serve.ps1
 ```
 
+Unter Linux (auch für die Pakete, die der Export mitliefert):
+
+```bash
+scripts/build.sh                 # Tests, WASM, build/app.zip und build/explorer.zip
+scripts/build.sh --fixture http://localhost:8080/ablage/   # zusätzlich die Prüfablage unter web/
+```
+
+`build/app.zip` ist die App (Inhalt von `web/` samt `pkg/pwa`, auch `snippets/`), `build/explorer.zip` das
+Modulpaket. Beide übernimmt coremesh-erp mit `make pwa-bundle` in den Export (Modul `export`): der Explorer
+geht verschlüsselt mit eigenem Modulschlüssel unter `m/` in jede Ablage, die App wird in das App-Verzeichnis
+des Ziels entpackt bzw. ist dort über „App herunterladen“ erhältlich.
+
+`cargo test -p cm1 --test go_vectors` prüft gegen die Prüfdateien des Go-Exports
+(`../coremesh-erp/pkg/cm1/testdata`, sonst `CM1_VECTORS=<Verzeichnis>`).
+
 Auf dem Entwicklungsrechner (Windows ohne MSVC-Build-Tools) wurde die GNU-Toolchain mit WinLibs verwendet:
 `RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu`.
 
@@ -50,6 +65,9 @@ Noch offen (bewusst nicht in dieser Fassung):
 - **Speicher**: Startdatei und Indizes im `localStorage`, nicht in IndexedDB. Datendateien liegen im Cache des Service Workers.
 - Nicht umgesetzt: „gesehen“-Merker und „neu seit Besuch“, Freigabe-Warnung (30 Tage), Suche über alle Datasets,
   zusammengesetzte Sichten (`teile`), Vorab-Laden und Speicherübersicht, Rückkanal.
-- Die Schlüsselformate sind gegen die eigenen Tests geprüft, nicht gegen die Testvektoren des Go-Exports (Spezifikation 7).
+- Gegen die Prüfdateien des Go-Exports geprüft (`tests/go_vectors.rs`, alle Fälle gleich) und im Browser gegen eine
+  Ablage aus dem Export (Startdatei, Modul aus `m/` mit Modulschlüssel, Index). Offen auf der App-Seite:
+  `null` in JSON wie fehlend behandeln (Spezifikation 1), Datasets anderer Module als „explorer“ an das
+  jeweilige Modul geben (`ablauf::explorer_datasets` filtert fest auf explorer).
 - Produktion: Die Ablage auf einem anderen Ursprung braucht CORS; die Seite braucht `script-src 'self' blob:` (Modul-Import).
 - Der Offline-Betrieb (Service Worker mit abgeschalteter Verbindung) ist nicht im Browser getestet.
