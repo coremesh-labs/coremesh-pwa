@@ -1,0 +1,1 @@
+pdfjs-dist 6.4.299 (registry.npmjs.org, sha512-AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g==), Apache-2.0 – nur build/pdf.min.mjs und build/pdf.worker.min.mjs

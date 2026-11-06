@@ -145,6 +145,8 @@ label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .detail dd { margin: 0; overflow-wrap: anywhere; }
 .preview { width: 100%; height: min(70vh, 720px); border: 1px solid var(--line); border-radius: var(--radius); background: #fff; margin-bottom: 12px; }
 img.preview { height: auto; object-fit: contain; }
+.pdfseiten { height: auto; max-height: 80vh; overflow: auto; background: var(--line); padding: 4px; }
+.pdfseiten canvas { display: block; width: 100%; max-width: 900px; height: auto; background: #fff; margin: 0 auto 4px; }
 .nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 /* Am Telefon: kleinere Abstände, Tabellenzeilen bleiben Listen */
@@ -184,7 +186,6 @@ img.preview { height: auto; object-fit: contain; }
 .vg .doktext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .vg .thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex: none; }
 .vg .thumb.platz { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.8rem; background: var(--bg); }
-.vg .vorschau { margin-top: 12px; }
 .vg .baum details { margin: 6px 0 6px 12px; }
 .vg .baum summary { cursor: pointer; padding: 4px 0; }
 .vg table.kz { width: 100%; border-collapse: collapse; }
@@ -204,3 +205,22 @@ img.preview { height: auto; object-fit: contain; }
 .vg .toolbar { margin-bottom: 12px; }
 .vg .stande label, .vg .aktionen { margin-top: 8px; }
 .vg .hinweis button { margin-left: 8px; }
+
+/* Dokument als eigenes Fenster über der Liste (Dateien: .detail, Vorgänge: .vorschau);
+   die Knöpfe (Schließen, voriges/nächstes) bleiben oben stehen, das Dokument kommt vor den Angaben. */
+.detail, .vg .vorschau {
+  position: fixed; inset: 0; z-index: 50; margin: 0; border: none; border-radius: 0;
+  overflow-y: auto; overscroll-behavior: contain; background: var(--bg);
+  display: flex; flex-direction: column; padding: 0 16px 16px;
+}
+.detail > .nav, .vg .vorschau > button[data-act="close-preview"] {
+  order: -2; position: sticky; top: 0; z-index: 1; margin: 0 -16px 12px; padding: 10px 16px;
+  background: var(--card); border-bottom: 1px solid var(--line);
+}
+.vg .vorschau > button[data-act="close-preview"] { margin-top: 0; align-self: stretch; text-align: left; font-weight: 600; }
+.vg .vorschau > button[data-act="close-preview"]::before, .detail > .nav > button[data-act="close"]::before { content: "✕ "; }
+.detail > h2 { order: -1; }
+.detail > dl { order: 1; margin-top: 12px; }
+.detail .preview, .vg .vorschau .preview { height: auto; min-height: 60vh; flex: 1 0 auto; }
+.detail .pdfseiten, .vg .vorschau .pdfseiten { max-height: none; min-height: 0; flex: none; }
+body:has(.detail, .vg .vorschau) { overflow: hidden; }
