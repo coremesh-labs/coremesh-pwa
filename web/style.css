@@ -152,4 +152,55 @@ img.preview { height: auto; object-fit: contain; }
   .detail dl { grid-template-columns: 1fr; }
   .detail dt { margin-top: 6px; }
   .actions > span { width: 100%; }
+  .vg dl { grid-template-columns: 1fr; }
+  .vg dt { margin-top: 6px; }
 }
+
+/* Vorgänge */
+.vg section { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.vg section > h2 { margin-top: 0; }
+.vg dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 10px 0; }
+.vg dt { color: var(--muted); }
+.vg dd { margin: 0; overflow-wrap: anywhere; }
+.vg dd.bad, .bad { color: var(--warn); font-weight: 600; }
+.vg .daten { margin-top: 4px; }
+.vg .kopf > .tags { margin-bottom: 4px; }
+.vg .fristen, .vg .fortschritt { margin: 8px 0; }
+.vg progress { width: 100%; height: 10px; accent-color: var(--accent); }
+.vg .md p { margin: 0.4em 0; }
+.vg .md a { color: var(--accent); }
+.vg .text { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.vg .text:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+.vg .text h3 { font-size: 1rem; margin: 0 0 4px; }
+.vg .checkliste, .vg .beteiligte, .vg .verlauf { list-style: none; padding: 0; margin: 0; }
+.vg .checkliste > li, .vg .beteiligte > li, .vg .verlauf > li { padding: 8px 0; border-top: 1px solid var(--line); }
+.vg .checkliste > li:first-child, .vg .beteiligte > li:first-child, .vg .verlauf > li:first-child { border-top: none; }
+.vg .checkliste .done { color: var(--muted); }
+.vg .checkliste .skip { color: var(--muted); font-style: italic; }
+.vg .verlauf p { margin: 2px 0; }
+.vg .dokumente { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.vg .dok { display: flex; gap: 12px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); }
+.vg .dok.fehler { color: var(--muted); }
+.vg .doktext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.vg .thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex: none; }
+.vg .thumb.platz { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.8rem; background: var(--bg); }
+.vg .vorschau { margin-top: 12px; }
+.vg .baum details { margin: 6px 0 6px 12px; }
+.vg .baum summary { cursor: pointer; padding: 4px 0; }
+.vg table.kz { width: 100%; border-collapse: collapse; }
+.vg table.kz td { padding: 6px 4px; border-top: 1px solid var(--line); }
+.vg table.kz td:last-child { text-align: right; }
+.ampel { font-size: 0.85rem; padding: 2px 8px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
+.ampel.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.ampel.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.ampel.bad { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.frist { font-size: 0.9rem; color: var(--muted); }
+.frist.bad { color: var(--warn); font-weight: 600; }
+.badge.bad { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.vg .zeile { border-top: 1px solid var(--line); background: var(--card); }
+.vg .liste { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.vg .liste > li:first-child { border-top: none; }
+.vg .zeile.fehler { padding: 10px 12px; color: var(--warn); }
+.vg .toolbar { margin-bottom: 12px; }
+.vg .stande label, .vg .aktionen { margin-top: 8px; }
+.vg .hinweis button { margin-left: 8px; }

@@ -10,9 +10,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// Name des Moduls „File Explorer“ (Feld „modul“ im Dataset der Startdatei).
-pub const EXPLORER: &str = "explorer";
-
 const KEY_SETUP: &str = "cm1.setup";
 const KEY_TRUST: &str = "cm1.trust";
 const KEY_START: &str = "cm1.start";
@@ -65,12 +62,13 @@ pub fn new_state(setup: SetupLink) -> Shared {
     let mut keys = Keyring::new();
     keys.add(&setup.key.name, &setup.key.secret);
     let mut trust = Trust::new();
-    let _ = trust.add(&setup.sig.key, &setup.sig.public);
     if let Some(list) = net::store_get(KEY_TRUST).and_then(|s| serde_json::from_str::<Vec<(String, String)>>(&s).ok()) {
         for (name, public) in list {
             let _ = trust.add(&name, &public);
         }
     }
+    // Der Anker aus dem Einrichtungslink gilt vor allem gespeicherten Vertrauen.
+    let _ = trust.add(&setup.sig.key, &setup.sig.public);
     let mut st = State {
         ablage,
         setup,
@@ -175,11 +173,11 @@ pub fn tag(iso: &str) -> String {
     }
 }
 
-/// Datasets, die dem Modul „explorer“ zugeordnet sind.
-pub fn explorer_datasets(st: &State) -> Vec<StartDataset> {
+/// Datasets, die dem Modul `module` zugeordnet sind (Feld „modul“ der Startdatei).
+pub fn module_datasets(st: &State, module: &str) -> Vec<StartDataset> {
     st.start
         .as_ref()
-        .map(|s| s.datasets.iter().filter(|d| d.modul == EXPLORER).cloned().collect())
+        .map(|s| s.datasets.iter().filter(|d| d.modul == module).cloned().collect())
         .unwrap_or_default()
 }
 
@@ -243,15 +241,15 @@ pub fn load_cached_indexes(st: &Shared) {
     }
 }
 
-/// Datendatei öffnen (Ablauf 3): Berechtigung, Hash, Kopf, Entschlüsseln.
+/// Datendatei öffnen (Ablauf 3): Berechtigung des Moduls, Hash, Kopf, Entschlüsseln.
 /// Liefert (Inhalt, Content-Type, Dateiname).
-pub async fn open_element(st: &Shared, ds_id: &str, r: &str) -> Result<(Vec<u8>, String, String), String> {
+pub async fn open_element(st: &Shared, module: &str, ds_id: &str, r: &str) -> Result<(Vec<u8>, String, String), String> {
     let (ablage, elem, keys, trust) = {
         let s = st.borrow();
         let erlaubt = s
             .start
             .as_ref()
-            .map(|start| start.datasets.iter().any(|d| d.id == ds_id && d.modul == EXPLORER))
+            .map(|start| start.datasets.iter().any(|d| d.id == ds_id && d.modul == module))
             .unwrap_or(false);
         if !erlaubt {
             return Err(Error::new(ErrorCode::Key, "keine Berechtigung für dieses Dataset".into()).to_string());

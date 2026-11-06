@@ -1,0 +1,10 @@
+{
+  "id": "vorgang",
+  "name": "Vorgänge",
+  "version": "1.0.0",
+  "einstieg": "vorgang.js",
+  "content_types": ["application/vnd.coremesh.process+json;v=1"],
+  "sichtarten": ["VORGANG"],
+  "rueckkanal": [],
+  "api": 1
+}
