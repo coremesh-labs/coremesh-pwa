@@ -36,7 +36,20 @@ pub struct State {
 pub type Shared = Rc<RefCell<State>>;
 
 /// Einrichtung: Einrichtungslink übernehmen (vom Browser-Speicher getrennt, nur pro Betrachter).
+/// Gehört der Link zu einer anderen Ablage, einer anderen Startdatei, einem anderen Schlüssel
+/// oder einem anderen Signaturschlüssel, wird alles Lokale verworfen (Vertrauen, Startdatei,
+/// Indizes) – sonst prüft die App die neue Ablage gegen alte Schlüssel (E_SIG, E_OLD).
 pub fn save_setup(setup: &SetupLink) -> bool {
+    if let Some(old) = load_setup() {
+        if old.ablage != setup.ablage
+            || old.start != setup.start
+            || old.key.name != setup.key.name
+            || old.sig.key != setup.sig.key
+            || old.sig.public != setup.sig.public
+        {
+            net::store_clear_prefix("cm1.");
+        }
+    }
     serde_json::to_string(setup).map(|j| net::store_set(KEY_SETUP, &j)).unwrap_or(false)
 }
 
