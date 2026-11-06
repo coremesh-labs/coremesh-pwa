@@ -193,13 +193,13 @@ fn set_module_view(root: &HtmlElement, titel: Option<&str>) {
     let Ok(Some(main)) = root.query_selector("main.home") else { return };
     match titel {
         Some(t) => {
-            let _ = main.class_list().add_1("im-modul");
+            main.set_class_name("home im-modul");
             if let Ok(Some(el)) = main.query_selector(".modulkopf .titel") {
                 el.set_text_content(Some(t));
             }
         }
         None => {
-            let _ = main.class_list().remove_1("im-modul");
+            main.set_class_name("home");
         }
     }
 }
