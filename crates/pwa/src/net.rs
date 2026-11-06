@@ -5,6 +5,12 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Blob, BlobPropertyBag, HtmlAnchorElement, Request, RequestCache, RequestInit, Response, Url};
 
 pub fn js_err(e: JsValue) -> String {
+    // Fehlerobjekte (z. B. TypeError „Failed to fetch“) ergäben als JSON nur „{}“
+    if let Some(err) = e.dyn_ref::<js_sys::Error>() {
+        if let Some(m) = err.message().as_string() {
+            return if m.contains("fetch") { format!("keine Verbindung ({m})") } else { m };
+        }
+    }
     e.as_string()
         .or_else(|| js_sys::JSON::stringify(&e).ok().and_then(|s| s.as_string()))
         .unwrap_or_else(|| "unbekannter Browserfehler".into())
@@ -104,5 +110,12 @@ pub fn clear_hash() {
                 let _ = h.replace_state_with_url(&JsValue::NULL, "", Some(&path));
             }
         }
+    }
+}
+
+/// Kennzeichen „ohne Verbindung gestartet“ am Dokument (data-offline); nav.js lädt bei „online“ neu.
+pub fn mark_offline(on: bool) {
+    if let Some(el) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element()) {
+        let _ = if on { el.set_attribute("data-offline", "1") } else { el.remove_attribute("data-offline") };
     }
 }

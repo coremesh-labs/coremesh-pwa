@@ -26,6 +26,7 @@
     }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(console.error);
+      navigator.serviceWorker.ready.then((r) => r.active && r.active.postMessage('fuellen')).catch(() => {});
     }
   </script>
 </body>

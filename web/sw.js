@@ -2,14 +2,28 @@
 // Regeln (Ablage_Format_Spezifikation.txt, 1): i/ nie aus dem Zwischenspeicher; o/ und m/ sind
 // unveränderlich (Pfad = SHA-256) und werden dauerhaft gespeichert; die Hülle selbst: Netz zuerst.
 
-const SHELL_CACHE = 'ablage-shell-v5';
+const SHELL_CACHE = 'ablage-shell-v8';
 const DATA_CACHE = 'ablage-immutable-v1';
-const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'icon.svg', 'pkg/pwa/pwa.js', 'pkg/pwa/pwa_bg.wasm',
-  'pdfview.js', 'nav.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
+// Dateien der Hülle: shell.json (schreibt scripts/build.sh), sonst das Nötigste.
+const FALLBACK = ['./', 'index.html', 'style.css', 'pkg/pwa/pwa.js', 'pkg/pwa/pwa_bg.wasm'];
+const shellFiles = () =>
+  fetch('shell.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : FALLBACK)).catch(() => FALLBACK);
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));
+  event.waitUntil(Promise.all([caches.open(SHELL_CACHE), shellFiles()]).then(([c, files]) => c.addAll(files)));
   self.skipWaiting();
+});
+
+// Hülle nachfüllen, falls der Zwischenspeicher leer blieb (z. B. Brave): die Seite meldet sich nach dem Start.
+self.addEventListener('message', (event) => {
+  if (event.data !== 'fuellen') return;
+  event.waitUntil(
+    caches.open(SHELL_CACHE).then(async (c) => {
+      const have = new Set((await c.keys()).map((r) => r.url));
+      const missing = (await shellFiles()).filter((p) => !have.has(new URL(p, self.registration.scope).href));
+      await Promise.all(missing.map((p) => c.add(p).catch(() => {})));
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -32,7 +46,7 @@ self.addEventListener('fetch', (event) => {
         const hit = await cache.match(req);
         if (hit) return hit;
         const res = await fetch(req);
-        if (res.ok) cache.put(req, res.clone());
+        if (res.ok) await cache.put(req, res.clone());
         return res;
       })
     );
@@ -43,14 +57,19 @@ self.addEventListener('fetch', (event) => {
   if (/\/i\//.test(url.pathname)) return;
 
   // Hülle und Shell: Netz zuerst, bei Fehler der Zwischenspeicher (offline).
+  // Kopie vor der Rückgabe ziehen (danach liest die Seite den Inhalt, ein späteres clone() schlägt fehl).
   event.respondWith(
     fetch(req)
       .then((res) => {
         if (res.ok && url.origin === self.location.origin) {
-          caches.open(SHELL_CACHE).then((c) => c.put(req, res.clone()));
+          const copy = res.clone();
+          event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.put(req, copy)));
         }
         return res;
       })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match('index.html')))
+      .catch(() =>
+        caches.match(req, { ignoreSearch: true }).then((hit) => hit || (req.mode === 'navigate' ? caches.match('index.html') : undefined))
+          .then((hit) => hit || Response.error())
+      )
   );
 });
