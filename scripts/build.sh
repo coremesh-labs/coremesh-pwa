@@ -42,6 +42,10 @@ done
 mkdir -p build/app
 cp -r web/index.html web/sw.js web/pdfview.js web/nav.js web/manifest.webmanifest web/style.css web/icon.svg web/vendor build/app/
 mkdir -p build/app/pkg && cp -r web/pkg/pwa build/app/pkg/ && rm -f build/app/pkg/pwa/*.d.ts
+# Dateiliste der Hülle für den Service Worker (offline-Start, auch die snippets von wasm-bindgen)
+(cd build/app && find . -type f ! -name sw.js ! -name shell.json ! -name 'HERKUNFT.txt' ! -name LICENSE | sed 's#^\./##' | sort |
+  python3 -c 'import json,sys; print(json.dumps(["./"] + [l.strip() for l in sys.stdin if l.strip()], indent=1))' > shell.json)
+cp build/app/shell.json web/shell.json
 rm -f build/app.zip
 (cd build/app && zip -q -X -r ../app.zip .)
 

@@ -13,6 +13,7 @@ use std::rc::Rc;
 const KEY_SETUP: &str = "cm1.setup";
 const KEY_TRUST: &str = "cm1.trust";
 const KEY_START: &str = "cm1.start";
+const KEY_MODULES: &str = "cm1.modules"; // zuletzt geprüfte Modulliste (offline-Start)
 
 pub struct State {
     /// Basis-Adresse der Ablage, mit „/“ am Ende.
@@ -116,6 +117,7 @@ pub async fn refresh_start(st: &Shared) {
     let bytes = match net::fetch(&url, true).await {
         Ok(b) => b,
         Err(e) => {
+            net::mark_offline(true); // kommt das Netz zurück, lädt die Seite neu (nav.js)
             let mut s = st.borrow_mut();
             match &s.start {
                 Some(start) => {
@@ -274,13 +276,26 @@ pub async fn open_element(st: &Shared, module: &str, ds_id: &str, r: &str) -> Re
 /// Modulliste holen und prüfen (Ablauf 4.1).
 pub async fn refresh_modules(st: &Shared) -> Result<(), String> {
     let url = format!("{}i/modules", st.borrow().ablage);
-    let bytes = net::fetch(&url, true).await?;
+    let bytes = match net::fetch(&url, true).await {
+        Ok(b) => b,
+        Err(e) => {
+            // ohne Netz: zuletzt geprüfte Modulliste (die Module selbst liegen unter m/ im Zwischenspeicher)
+            if let Some(list) = net::store_get(KEY_MODULES).and_then(|j| serde_json::from_str::<Modules>(&j).ok()) {
+                st.borrow_mut().modules = Some(list);
+                return Ok(());
+            }
+            return Err(e);
+        }
+    };
     let s = st.borrow();
     let exp = Expect { kind: "modules", path: Some("i/modules"), content_type: Some(CT_MODULES), key: None };
     let opened = open(&bytes, &exp, &s.keys, &s.trust).map_err(|e| e.to_string())?;
     let list: Modules = serde_json::from_slice(&opened.data)
         .map_err(|e| Error::new(ErrorCode::Format, format!("Modulliste: {e}")).to_string())?;
     drop(s);
+    if let Ok(j) = std::str::from_utf8(&opened.data) {
+        net::store_set(KEY_MODULES, j);
+    }
     st.borrow_mut().modules = Some(list);
     Ok(())
 }

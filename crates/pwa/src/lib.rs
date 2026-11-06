@@ -48,6 +48,20 @@ pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
     if let Err(e) = ablauf::refresh_modules(&st).await {
         st.borrow_mut().meldungen.push(format!("Module: {e}"));
     }
+    // Module der Startseite vorab holen: der Service Worker hält m/… dauerhaft, so starten sie auch offline.
+    let refs: Vec<String> = {
+        let s = st.borrow();
+        let wanted = s.start.as_ref().map(|x| x.modules.clone()).unwrap_or_default();
+        s.modules
+            .as_ref()
+            .map(|m| m.module.iter().filter(|e| wanted.contains(&e.id) && !e.ref_.is_empty()).map(|e| format!("{}{}", s.ablage, e.ref_)).collect())
+            .unwrap_or_default()
+    };
+    wasm_bindgen_futures::spawn_local(async move {
+        for url in refs {
+            let _ = net::fetch(&url, false).await;
+        }
+    });
     show_home(&st, &root);
     install_home_events(&st, &root);
     Ok(())

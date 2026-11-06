@@ -70,3 +70,9 @@ addEventListener('popstate', () => {
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape') overlayClose()?.click();
 });
+
+// Ohne Verbindung gestartet (data-offline von der Hülle): sobald das Netz zurück ist, neu laden –
+// dann holt die App Startdatei, Indizes und Module wieder vom Server.
+addEventListener('online', () => {
+  if (document.documentElement.dataset.offline) setTimeout(() => location.reload(), 1500);
+});
