@@ -11,7 +11,8 @@ Module werden über den Server verteilt (`m/<sha256>`, signierte Modulliste `i/m
 | `crates/cm1` | Format cm1: Umschlag, Modelle, Prüfen (Hash, Ed25519, age, gzip), Schreiben. Tests: `tests/roundtrip.rs` |
 | `crates/pwa` | Hülle (WASM): Einrichten, Startdatei, Dataset-Indizes, Datendateien, Module laden, `host`-Schnittstelle |
 | `crates/explorer` | Modul „Dateien“ (WASM): Ordner, Suche, Filter, Vorschau (PDF, Bild), Download einzeln und als Zip mit Inhaltsverzeichnis.csv |
-| `crates/tools` | `cm1tool fixture`: erzeugt eine Prüfablage (Testbestand) im cm1-Format |
+| `crates/vorgang` | Modul „Vorgänge“ (WASM): Objektdaten process/1 aus Vorgang_Objektdaten_Konzept.txt, Abschnitt 7 – Liste mit Filtern, Detail mit allen Abschnitten nach Umfang, Stände, Vorschau, Offline-Vorabladen, „neu seit dem letzten Öffnen“ |
+| `crates/tools` | `cm1tool fixture`: erzeugt eine Prüfablage (Testbestand) im cm1-Format, mit Dataset „Explorer“ und Dataset „Vorgang“ |
 | `web/` | Statische PWA: `index.html`, `sw.js` (Service Worker), Manifest, Styles |
 | `scripts/` | `build.ps1` (Build und Prüfablage), `serve.ps1` (statischer Server auf Port 8080) |
 

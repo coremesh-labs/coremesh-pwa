@@ -16,10 +16,12 @@ use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
-type Res<T> = Result<T, Box<dyn Error>>;
+mod vorgang_fixture;
 
-const CREATED: &str = "2026-11-06T14:00:00Z";
-const SRV_KEY: &str = "srv-sig:1";
+pub(crate) type Res<T> = Result<T, Box<dyn Error>>;
+
+pub(crate) const CREATED: &str = "2026-11-06T14:00:00Z";
+pub(crate) const SRV_KEY: &str = "srv-sig:1";
 
 fn random32() -> Res<[u8; 32]> {
     let mut b = [0u8; 32];
@@ -27,13 +29,13 @@ fn random32() -> Res<[u8; 32]> {
     Ok(b)
 }
 
-fn new_id() -> Res<String> {
+pub(crate) fn new_id() -> Res<String> {
     let mut b = [0u8; 16];
     getrandom::getrandom(&mut b).map_err(|e| format!("Zufall: {e}"))?;
     Ok(data_encoding::BASE32_NOPAD.encode(&b).to_lowercase())
 }
 
-fn age_pair() -> (String, String) {
+pub(crate) fn age_pair() -> (String, String) {
     let id = age::x25519::Identity::generate();
     let secret = id.to_string().expose_secret().to_string();
     let public = age_public(&secret).expect("eigener Schlüssel");
@@ -41,7 +43,7 @@ fn age_pair() -> (String, String) {
 }
 
 /// Minimales, gültiges PDF mit einem Textzeilen-Inhalt (ASCII).
-fn pdf(text: &str) -> Vec<u8> {
+pub(crate) fn pdf(text: &str) -> Vec<u8> {
     let stream = format!("BT /F1 22 Tf 72 760 Td ({}) Tj ET", text.replace('(', "[").replace(')', "]"));
     let objs = [
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
@@ -85,7 +87,7 @@ fn zip_dir(dir: &Path) -> Res<Vec<u8>> {
     Ok(zw.finish()?.into_inner())
 }
 
-fn write(path: &Path, bytes: &[u8]) -> Res<()> {
+pub(crate) fn write(path: &Path, bytes: &[u8]) -> Res<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -101,7 +103,14 @@ fn arg(args: &[String], name: &str) -> Res<String> {
 }
 
 fn fixture(args: &[String]) -> Res<()> {
-    let module_dir = PathBuf::from(arg(args, "--module")?);
+    let module_dirs: Vec<PathBuf> = args
+        .windows(2)
+        .filter(|w| w[0] == "--module")
+        .map(|w| PathBuf::from(&w[1]))
+        .collect();
+    if module_dirs.is_empty() {
+        return Err("Parameter --module fehlt".into());
+    }
     let out = PathBuf::from(arg(args, "--out")?);
     let base = arg(args, "--base")?;
     let base = if base.ends_with('/') { base } else { format!("{base}/") };
@@ -120,25 +129,39 @@ fn fixture(args: &[String]) -> Res<()> {
     let ds_key = format!("ds:{ds_id}:1");
     let (ds_secret, ds_pub) = age_pair();
 
-    // Modulpaket: zip aus dem Verzeichnis, dann als m/<sha256> (kind module, ohne Schlüssel).
-    let manifest: Manifest = serde_json::from_slice(&fs::read(module_dir.join("manifest.json"))?)?;
-    let zip_bytes = zip_dir(&module_dir)?;
-    let module_file = seal(
-        &Seal {
-            kind: "module",
-            content_type: CT_MODULE,
-            path: "",
-            key: "",
-            recipient: None,
-            packing: "none",
-            name: "",
-            created: CREATED,
-            signer: None,
-        },
-        &zip_bytes,
-    )?;
-    let module_sha = sha256_hex(&module_file);
-    write(&ablage.join("m").join(&module_sha), &module_file)?;
+    // Modulpakete: zip aus jedem Verzeichnis, dann als m/<sha256> (kind module, ohne Schlüssel).
+    let mut module_entries: Vec<ModuleEntry> = Vec::new();
+    for module_dir in &module_dirs {
+        let manifest: Manifest = serde_json::from_slice(&fs::read(module_dir.join("manifest.json"))?)?;
+        let zip_bytes = zip_dir(module_dir)?;
+        let module_file = seal(
+            &Seal {
+                kind: "module",
+                content_type: CT_MODULE,
+                path: "",
+                key: "",
+                recipient: None,
+                packing: "none",
+                name: "",
+                created: CREATED,
+                signer: None,
+            },
+            &zip_bytes,
+        )?;
+        let module_sha = sha256_hex(&module_file);
+        write(&ablage.join("m").join(&module_sha), &module_file)?;
+        module_entries.push(ModuleEntry {
+            id: manifest.id.clone(),
+            name: manifest.name.clone(),
+            version: manifest.version.clone(),
+            ref_: format!("m/{module_sha}"),
+            content_types: manifest.content_types.clone(),
+            sichtarten: manifest.sichtarten.clone(),
+            rueckkanal: manifest.rueckkanal.clone(),
+        });
+    }
+    // Datenset „Vorgang“ (Modul vorgang, Objektdaten process/1).
+    let (vorgang_ds, vorgang_key) = vorgang_fixture::dataset(&ablage, &srv)?;
 
     // Datendateien (o/<sha256>) und Elemente.
     struct Spec {
@@ -245,15 +268,7 @@ fn fixture(args: &[String]) -> Res<()> {
     let modules = Modules {
         fassung: 1,
         erstellt: CREATED.into(),
-        module: vec![ModuleEntry {
-            id: manifest.id.clone(),
-            name: manifest.name.clone(),
-            version: manifest.version.clone(),
-            ref_: format!("m/{module_sha}"),
-            content_types: manifest.content_types.clone(),
-            sichtarten: manifest.sichtarten.clone(),
-            rueckkanal: manifest.rueckkanal.clone(),
-        }],
+        module: module_entries.clone(),
     };
     let modules_file = seal(
         &Seal {
@@ -291,8 +306,11 @@ fn fixture(args: &[String]) -> Res<()> {
             }],
             rueckkanal: None,
         },
-        schluessel: vec![KeyEntry { key: ds_key.clone(), secret: ds_secret.clone(), dataset: ds_id.clone(), gueltig_ab: "2026-11-06".into() }],
-        datasets: vec![StartDataset {
+        schluessel: vec![
+            KeyEntry { key: ds_key.clone(), secret: ds_secret.clone(), dataset: ds_id.clone(), gueltig_ab: "2026-11-06".into() },
+            vorgang_key,
+        ],
+        datasets: vec![vorgang_ds, StartDataset {
             id: ds_id.clone(),
             name: index.name.clone(),
             sichtart: index.sichtart.clone(),
@@ -306,7 +324,7 @@ fn fixture(args: &[String]) -> Res<()> {
             freigabe_bis: "2028-04-30".into(),
             modul: EXPLORER_ID.into(),
         }],
-        modules: vec![EXPLORER_ID.into()],
+        modules: module_entries.iter().map(|m| m.id.clone()).collect(),
         hinweise: vec![],
     };
     let start_file = seal(
@@ -336,7 +354,7 @@ fn fixture(args: &[String]) -> Res<()> {
     };
     let link_b64 = encode_b64url(serde_json::to_string(&link)?.as_bytes());
     let text = format!(
-        "Einrichtungslink (Prüfablage):\n\nhttp://localhost:8080/#cm1:{link_b64}\n\nAblage: {base}\nDataset: {ds_id} (Index zuletzt {max_datum})\nModul: {module_sha}\n"
+        "Einrichtungslink (Prüfablage):\n\nhttp://localhost:8080/#cm1:{link_b64}\n\nAblage: {base}\nDataset: {ds_id} (Index zuletzt {max_datum})\n"
     );
     write(&out.join("einrichtungslink.txt"), text.as_bytes())?;
     println!("Prüfablage geschrieben nach {}", out.display());

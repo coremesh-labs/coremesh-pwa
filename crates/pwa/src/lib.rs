@@ -39,7 +39,7 @@ pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
 
     ablauf::refresh_start(&st).await;
     ablauf::load_cached_indexes(&st);
-    let datasets = ablauf::explorer_datasets(&st.borrow());
+    let datasets = st.borrow().start.as_ref().map(|s| s.datasets.clone()).unwrap_or_default();
     for ds in datasets {
         if let Err(e) = ablauf::ensure_index(&st, &ds).await {
             st.borrow_mut().meldungen.push(format!("{}: {e}", ds.name));
@@ -91,14 +91,9 @@ fn show_home(st: &Shared, root: &HtmlElement) {
         html.push_str("<section class=\"tiles\">");
         for id in &start.modules {
             let entry = s.modules.as_ref().and_then(|m| m.module.iter().find(|e| &e.id == id));
-            let (name, n) = match (id.as_str(), entry) {
-                (ablauf::EXPLORER, e) => (
-                    e.map(|e| e.name.clone()).unwrap_or_else(|| "Dateien".into()),
-                    ablauf::explorer_datasets(&s).len(),
-                ),
-                (_, Some(e)) => (e.name.clone(), 0),
-                _ => continue,
-            };
+            let Some(entry) = entry else { continue };
+            let name = entry.name.clone();
+            let n = ablauf::module_datasets(&s, id).len();
             html.push_str(&format!(
                 "<button class=\"tile\" data-act=\"modul\" data-id=\"{}\"><strong>{}</strong><span>{} Datasets</span></button>",
                 esc(id),
@@ -159,7 +154,7 @@ async fn open_module(st: Shared, root: HtmlElement, id: String) {
             }
         }
     };
-    let host = module::make_host(&st);
+    let host = module::make_host(&st, &id);
     if let Err(e) = module::mount(&ns, &host, &area).await {
         area.set_inner_html(&format!("<p class=\"status\">Modul-Fehler: {}</p>", esc(&e)));
     }
