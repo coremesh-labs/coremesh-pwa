@@ -2,10 +2,10 @@
 // Regeln (Ablage_Format_Spezifikation.txt, 1): i/ nie aus dem Zwischenspeicher; o/ und m/ sind
 // unveränderlich (Pfad = SHA-256) und werden dauerhaft gespeichert; die Hülle selbst: Netz zuerst.
 
-const SHELL_CACHE = 'ablage-shell-v3';
+const SHELL_CACHE = 'ablage-shell-v4';
 const DATA_CACHE = 'ablage-immutable-v1';
 const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'icon.svg', 'pkg/pwa/pwa.js', 'pkg/pwa/pwa_bg.wasm',
-  'pdfview.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
+  'pdfview.js', 'nav.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));

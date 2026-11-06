@@ -40,7 +40,7 @@ done
 
 # App: web/ ohne Prüfablage und Einrichtungslink
 mkdir -p build/app
-cp -r web/index.html web/sw.js web/pdfview.js web/manifest.webmanifest web/style.css web/icon.svg web/vendor build/app/
+cp -r web/index.html web/sw.js web/pdfview.js web/nav.js web/manifest.webmanifest web/style.css web/icon.svg web/vendor build/app/
 mkdir -p build/app/pkg && cp -r web/pkg/pwa build/app/pkg/ && rm -f build/app/pkg/pwa/*.d.ts
 rm -f build/app.zip
 (cd build/app && zip -q -X -r ../app.zip .)
