@@ -17,8 +17,8 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   HTTP: GET. i/ ohne Zwischenspeicher holen (cache: "no-store"); o/, m/ dürfen dauerhaft
     zwischengespeichert werden. Die Ablage liefert CORS für die Adresse der PWA.
     Rückkanal: POST <adresse><id> (Adresse aus der Startdatei, z. B. …/r/), Inhalt = Nachricht
-    (5.6). Antwort 201 angenommen, 200 schon da (Wiederholung), 400/404/413 abgewiesen (nicht
-    wiederholen), sonst bzw. ohne Netz später noch einmal. r/ ist von außen nicht lesbar.
+    (5.6). Antwort 201 angenommen, 200 schon da (Wiederholung), 400/413 abgewiesen (nicht
+    wiederholen), sonst (auch 404/405: Worker ohne Rückkanal) bzw. ohne Netz später noch einmal. r/ ist von außen nicht lesbar.
 
 2. Schlüssel und Schlüsselnamen
   Name                     Art                         Darstellung
