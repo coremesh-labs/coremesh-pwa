@@ -115,7 +115,8 @@ pub fn baue(
 pub fn bewerte(status: u16) -> Option<bool> {
     match status {
         200..=299 => Some(true),
-        400 | 404 | 405 | 413 => Some(false),
+        // 404/405: Worker (noch) ohne Rückkanal – liegen lassen, bis er aktualisiert ist
+        400 | 413 => Some(false),
         _ => None,
     }
 }
@@ -199,6 +200,7 @@ mod tests {
         assert_eq!(bewerte(201), Some(true));
         assert_eq!(bewerte(413), Some(false));
         assert_eq!(bewerte(503), None);
+        assert_eq!(bewerte(405), None);
         let mut l = vec![
             Eintrag { id: "a".into(), status: "gesendet".into(), erstellt: "2026-09-01T00:00:00Z".into(), ..Default::default() },
             Eintrag { id: "b".into(), status: "wartet".into(), erstellt: "2026-09-01T00:00:00Z".into(), ..Default::default() },
