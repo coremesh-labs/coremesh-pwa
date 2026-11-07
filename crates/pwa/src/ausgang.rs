@@ -141,11 +141,17 @@ fn tage_zwischen(von: &str, bis: &str) -> i64 {
     }
 }
 
-/// Neue zufällige Nachrichten-ID (16 Byte, base64url → 22 Zeichen).
+/// Neue Nachrichten-ID: Zeitstempel (Millisekunden, Zahl) vor dem Zufallsteil (16 Byte,
+/// base64url → 22 Zeichen), z. B. 1762509600000-…; der Server verarbeitet in dieser
+/// Reihenfolge (Spezifikation 5.6).
 pub fn neue_id() -> String {
+    id_mit_zeit(js_sys::Date::now() as u64)
+}
+
+fn id_mit_zeit(ms: u64) -> String {
     let mut b = [0u8; 16];
     getrandom::getrandom(&mut b).expect("Zufall");
-    encode_b64url(&b)
+    format!("{ms}-{}", encode_b64url(&b))
 }
 
 #[cfg(test)]
@@ -193,6 +199,16 @@ mod tests {
         assert!(baue(&start, Some(&mods), &ds, "vorgang", "FOTO", &ein, "x", "t").is_err());
         let fremd = serde_json::json!({"bezug": {"dataset": "ds9"}});
         assert!(baue(&start, Some(&mods), &ds, "vorgang", "VORGANG_ANMERKUNG", &fremd, "x", "t").is_err());
+    }
+
+    #[test]
+    fn id_mit_zeitstempel() {
+        let id = id_mit_zeit(1_762_509_600_000);
+        let (ts, rest) = id.split_once('-').unwrap();
+        assert_eq!(ts, "1762509600000");
+        assert_eq!(rest.len(), 22);
+        // passt zum Worker: ^r/[A-Za-z0-9_-]{16,64}$
+        assert!(id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]

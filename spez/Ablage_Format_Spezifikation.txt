@@ -163,7 +163,9 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   5.6 Nachricht (Rückkanal), r/<id>
     Kopf: kind "message", path "r/<id>", key = srv-box:<n> (verschlüsselt für den Server),
     content_type "application/vnd.coremesh.message+json;v=1", signed_by = dev:<uid>:<n>.
-    <id>: 16–64 Zeichen A–Z a–z 0–9 _ - (zufällig, 16 Byte base64url).
+    <id>: 16–64 Zeichen A–Z a–z 0–9 _ -, seit 2026.11.05-40 <ms>-<zufall>: Zeitstempel des Geräts
+      in Millisekunden (Zahl, z. B. 1762509600000), dann 16 Byte zufällig base64url. Der Server
+      verarbeitet in der Reihenfolge des Zeitstempels (ältere IDs ohne Zeitstempel: nach erstellt).
     {"id": "<id>", "art": "VORGANG_ANMERKUNG", "erstellt": "2026-11-07T08:35:09Z", "modul": "vorgang",
      "bezug": {"art": "VORGANG", "id": "AF-2026-0003", "dataset": "<ablage-id>"},
      "daten": {"text": "Es tropft wieder unter der Spüle."}}
@@ -171,6 +173,11 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
     Dataset dieses Moduls; ohne Netz bleibt die Nachricht im Ausgang und geht später. Der Server
     prüft Gerät (aktiv), Signatur, Modul, Art (Katalog) und Bezug (Teilnehmer sieht das Dataset)
     und verarbeitet sie genau einmal (id).
+    Eingang des Servers (Queue): Er übernimmt jede Datei aus r/ mit Inhalt in seinen Eingang und
+    löscht sie dann in der Ablage. Ohne gültige Signatur bzw. mit widerrufenem Schlüssel: „ungültig“,
+    nur zur Kontrolle sichtbar. Verarbeitet wird nach dem Zeitstempel, je Objekt (bezug.art + id)
+    eine eigene Warteschlange: scheitert eine Nachricht, warten die späteren desselben Objekts,
+    die übrigen laufen weiter (Wiederholung mit wachsendem Abstand, dann „angehalten“).
 
 6. Einrichtungslink
   https://<Adresse der PWA>/#cm1:<base64url ohne „=“ von JSON>
