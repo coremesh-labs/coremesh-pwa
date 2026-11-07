@@ -5,6 +5,7 @@
 //! (wasm-bindgen, Target web). Das Modul exportiert `mount(host, root)`.
 
 use crate::ablauf::{self, Shared};
+use crate::ausgang;
 use crate::net::{self, js_err};
 use cm1::model::{Manifest, ModuleEntry};
 use std::io::{Cursor, Read};
@@ -174,6 +175,37 @@ pub fn make_host(st: &Shared, module: &str) -> JsValue {
             let k = format!("mod.{}.{}", mm, key.as_string().unwrap_or_default());
             let ok = net::store_set(&k, &value.as_string().unwrap_or_default());
             future_to_promise(async move { Ok(JsValue::from_bool(ok)) }).into()
+        }),
+    );
+
+    // Rückkanal (seit Fassung mit Ausgang): send(art, json) → Promise<string> (Eintrag als JSON),
+    // ausgang() → Promise<string> (Nachrichten des Moduls: wartet / gesendet / abgewiesen).
+    let s = st.clone();
+    let mm = m.clone();
+    set_method(
+        &host,
+        "send",
+        Closure::new(move |art: JsValue, json: JsValue, _: JsValue| {
+            let s = s.clone();
+            let mm = mm.clone();
+            let art = art.as_string().unwrap_or_default();
+            let json = json.as_string().unwrap_or_default();
+            future_to_promise(async move {
+                let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+                let e = ausgang::senden(&s, &mm, &art, &v).await.map_err(|e| JsValue::from_str(&e))?;
+                Ok(JsValue::from_str(&serde_json::to_string(&e).unwrap_or_default()))
+            })
+            .into()
+        }),
+    );
+
+    let mm = m.clone();
+    set_method(
+        &host,
+        "ausgang",
+        Closure::new(move |_: JsValue, _: JsValue, _: JsValue| {
+            let j = ausgang::liste_json(&mm);
+            future_to_promise(async move { Ok(JsValue::from_str(&j)) }).into()
         }),
     );
 

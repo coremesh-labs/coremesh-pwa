@@ -6,6 +6,8 @@ pub const CT_START: &str = "application/vnd.coremesh.start+json;v=1";
 pub const CT_DATASET: &str = "application/vnd.coremesh.dataset+json;v=1";
 pub const CT_MODULES: &str = "application/vnd.coremesh.modules+json;v=1";
 pub const CT_MODULE: &str = "application/vnd.coremesh.module+zip;v=1";
+/// Nachricht eines Geräts an den Server (Rückkanal, r/<id>).
+pub const CT_MESSAGE: &str = "application/vnd.coremesh.message+json;v=1";
 
 /// Code mit Bezeichnung, z. B. Art {code, name}.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -135,6 +137,27 @@ pub struct Server {
 pub struct Rueckkanal {
     pub key: String,
     pub public: String,
+    /// Adresse für Nachrichten (POST <adresse><id>), z. B. "https://…/r/"; leer = kein Rückkanal.
+    #[serde(default)]
+    pub adresse: String,
+}
+
+/// Dieses Gerät (Startdatei „geraet“): Nr., Bezeichnung, Signaturschlüssel für den Rückkanal.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Geraet {
+    #[serde(default)]
+    pub nr: u64,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub signatur: Option<GeraetSignatur>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct GeraetSignatur {
+    pub key: String,
+    /// Ed25519-Seed, base64url (32 Bytes).
+    pub secret: String,
 }
 
 /// Eintrag im Schlüsselbund der Startdatei.
@@ -194,6 +217,8 @@ pub struct Start {
     pub modules: Vec<String>,
     #[serde(default)]
     pub hinweise: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub geraet: Option<Geraet>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

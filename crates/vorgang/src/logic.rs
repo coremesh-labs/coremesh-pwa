@@ -206,6 +206,16 @@ pub fn datum_de(iso: &str) -> String {
     }
 }
 
+/// Zustand einer eigenen Nachricht als Text.
+pub fn ausgang_text(status: &str, fehler: &str) -> String {
+    match status {
+        "wartet" => "wartet auf Verbindung – wird gesendet, sobald das Netz da ist".into(),
+        "gesendet" => "gesendet – erscheint nach der Verarbeitung im Verlauf".into(),
+        "abgewiesen" => format!("nicht angenommen: {fehler}"),
+        _ => fehler.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

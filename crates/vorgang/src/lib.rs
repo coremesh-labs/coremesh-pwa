@@ -23,7 +23,7 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
-use web_sys::{Blob, BlobPropertyBag, Event, HtmlElement, HtmlInputElement, HtmlSelectElement, Url};
+use web_sys::{Blob, BlobPropertyBag, Event, HtmlElement, HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement, Url};
 
 #[allow(dead_code)]
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -68,6 +68,26 @@ struct Detail {
     /// Vorschau (PDF oder Bild): (Object-URL, Typ).
     vorschau: Option<(String, String)>,
     verlauf_neu_oben: bool,
+    /// Rückkanal: Entwurf der Anmerkung und eigene Nachrichten zu diesem Vorgang.
+    entwurf: String,
+    ausgang: Vec<Ausgehend>,
+    sendet: bool,
+}
+
+/// Eigene Nachricht im Ausgang der Hülle (host.ausgang()).
+#[derive(Clone, Default, Deserialize)]
+struct Ausgehend {
+    id: String,
+    #[serde(default)]
+    bezug: serde_json::Value,
+    #[serde(default)]
+    erstellt: String,
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    fehler: String,
 }
 
 struct App {
@@ -127,6 +147,7 @@ fn install_listeners(app: &Shared) -> Result<(), JsValue> {
                 paint(&app);
             }
             "open-doc" => spawn_local(open_doc(a.clone(), r)),
+            "anm-senden" => spawn_local(anmerkung_senden(a.clone())),
             "prefetch" => spawn_local(prefetch(a.clone())),
             "close-preview" => {
                 let mut app = a.borrow_mut();
@@ -172,6 +193,19 @@ fn install_listeners(app: &Shared) -> Result<(), JsValue> {
     });
     root.add_event_listener_with_callback("change", on_change.as_ref().unchecked_ref())?;
     on_change.forget();
+
+    // Entwurf der Anmerkung mitschreiben (das Neuzeichnen ersetzt das Eingabefeld)
+    let a = app.clone();
+    let on_input = Closure::<dyn FnMut(Event)>::new(move |ev: Event| {
+        let Some(el) = closest_action(&ev) else { return };
+        if el.get_attribute("data-act").as_deref() == Some("anm-text") {
+            if let Some(d) = a.borrow_mut().detail.as_mut() {
+                d.entwurf = read_value(&el);
+            }
+        }
+    });
+    root.add_event_listener_with_callback("input", on_input.as_ref().unchecked_ref())?;
+    on_input.forget();
     Ok(())
 }
 
@@ -185,6 +219,8 @@ fn read_value(el: &web_sys::Element) -> String {
         i.value()
     } else if let Some(s) = el.dyn_ref::<HtmlSelectElement>() {
         s.value()
+    } else if let Some(t) = el.dyn_ref::<HtmlTextAreaElement>() {
+        t.value()
     } else {
         String::new()
     }
@@ -348,7 +384,63 @@ async fn open_detail(app: Shared, ds: String) {
         a.status.clear();
         paint(&a);
     }
+    load_ausgang(&app).await;
     load_bilder(app, ds).await;
+}
+
+/// Eigene Nachrichten zu diesem Vorgang aus dem Ausgang der Hülle.
+async fn load_ausgang(app: &Shared) {
+    let (host, ds) = {
+        let a = app.borrow();
+        let Some(d) = a.detail.as_ref() else { return };
+        (a.host.clone(), d.ds.clone())
+    };
+    let list: Vec<Ausgehend> = match call(&host, "ausgang", &[]).await {
+        Ok(v) => serde_json::from_str(&v.as_string().unwrap_or_default()).unwrap_or_default(),
+        Err(_) => return, // ältere Hülle ohne Rückkanal
+    };
+    let mut a = app.borrow_mut();
+    if let Some(d) = a.detail.as_mut().filter(|d| d.ds == ds) {
+        d.ausgang = list.into_iter().filter(|e| e.bezug.get("dataset").and_then(|x| x.as_str()) == Some(ds.as_str())).collect();
+    }
+    paint(&a);
+}
+
+/// Anmerkung an die Verwaltung (Rückkanal VORGANG_ANMERKUNG).
+async fn anmerkung_senden(app: Shared) {
+    let (host, payload) = {
+        let mut a = app.borrow_mut();
+        let Some(d) = a.detail.as_mut() else { return };
+        let text = d.entwurf.trim().to_string();
+        if text.is_empty() || d.sendet {
+            return;
+        }
+        d.sendet = true;
+        let p = serde_json::json!({
+            "bezug": {"art": "VORGANG", "id": d.abbild.vorgang.nummer, "dataset": d.ds},
+            "daten": {"text": text},
+        });
+        (a.host.clone(), p.to_string())
+    };
+    let res = call(&host, "send", &[JsValue::from_str("VORGANG_ANMERKUNG"), JsValue::from_str(&payload)]).await;
+    {
+        let mut a = app.borrow_mut();
+        let msg = match &res {
+            Ok(v) => {
+                let e: Ausgehend = serde_json::from_str(&v.as_string().unwrap_or_default()).unwrap_or_default();
+                if let Some(d) = a.detail.as_mut() {
+                    d.entwurf.clear();
+                }
+                logic::ausgang_text(&e.status, &e.fehler)
+            }
+            Err(e) => format!("Nicht gesendet: {e}"),
+        };
+        if let Some(d) = a.detail.as_mut() {
+            d.sendet = false;
+        }
+        a.status = msg;
+    }
+    load_ausgang(&app).await;
 }
 
 /// Vorschaubilder (image/*) der Dokumente holen (7.3).
@@ -791,6 +883,9 @@ fn detail_html(a: &App, d: &Detail) -> String {
             .collect()
     }));
     h.push_str(&sektion(umf, "verlauf", !v.verlauf.is_empty(), "Verlauf", d, || verlauf_html(d, v)));
+    if d.aktuell {
+        h.push_str(&anmerkung_html(d, v));
+    }
     h.push_str(&sektion(umf, "dokumente", !v.dokumente.is_empty(), "Dokumente", d, || dokumente_html(d, v)));
     h.push_str(&sektion(umf, "teilvorgaenge", !v.teilvorgaenge.is_empty(), "Teilvorgänge", d, || {
         format!("<div class=\"baum\">{}</div>", v.teilvorgaenge.iter().map(|t| teil_html(t, 1, &a.heute)).collect::<String>())
@@ -830,6 +925,33 @@ fn detail_html(a: &App, d: &Detail) -> String {
     }
     h.push_str("<section class=\"aktionen\"><button data-act=\"prefetch\">Offline verfügbar machen</button></section>");
     h
+}
+
+/// Anmerkung schreiben und eigene, noch nicht im Verlauf angekommene Nachrichten.
+fn anmerkung_html(d: &Detail, v: &Vorgang) -> String {
+    let mut s = String::from("<section class=\"anmerkung\"><h2>Anmerkung an die Verwaltung</h2>");
+    let offen: Vec<&Ausgehend> = d.ausgang.iter().filter(|e| !v.verlauf.iter().any(|x| x.nachricht == e.id)).collect();
+    if !offen.is_empty() {
+        s.push_str("<ul class=\"ausgang\">");
+        for e in offen {
+            s.push_str(&format!(
+                "<li class=\"{}\"><span class=\"meta\">{}</span><p>{}</p><p class=\"meta\">{}</p></li>",
+                esc(&e.status),
+                esc(&zeit_de(&e.erstellt)),
+                esc(&e.text),
+                esc(&logic::ausgang_text(&e.status, &e.fehler))
+            ));
+        }
+        s.push_str("</ul>");
+    }
+    s.push_str(&format!(
+        "<textarea data-act=\"anm-text\" rows=\"3\" maxlength=\"4000\" placeholder=\"z. B. Es tropft wieder unter der Spüle.\">{}</textarea>\
+         <button data-act=\"anm-senden\"{}>Senden</button>\
+         <p class=\"meta\">Geht verschlüsselt an die Verwaltung und erscheint nach der Verarbeitung im Verlauf. Ohne Netz wird sie gespeichert und später gesendet.</p></section>",
+        esc(&d.entwurf),
+        if d.sendet { " disabled" } else { "" }
+    ));
+    s
 }
 
 fn stand_datum(d: &Detail) -> String {

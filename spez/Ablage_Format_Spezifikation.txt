@@ -14,8 +14,11 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   Texte: UTF-8. JSON: unbekannte Felder ignorieren (Erweiterungen kommen dazu, nichts wird umgedeutet).
   Leere Werte: der Export lässt leere Felder weg (kein null). Der Leser behandelt null wie ein
     fehlendes Feld (Text "", Liste [], Objekt nicht vorhanden) und bricht daran nicht ab.
-  HTTP: nur GET. i/ ohne Zwischenspeicher holen (cache: "no-store"); o/, m/ dürfen dauerhaft
+  HTTP: GET. i/ ohne Zwischenspeicher holen (cache: "no-store"); o/, m/ dürfen dauerhaft
     zwischengespeichert werden. Die Ablage liefert CORS für die Adresse der PWA.
+    Rückkanal: POST <adresse><id> (Adresse aus der Startdatei, z. B. …/r/), Inhalt = Nachricht
+    (5.6). Antwort 201 angenommen, 200 schon da (Wiederholung), 400/404/413 abgewiesen (nicht
+    wiederholen), sonst bzw. ohne Netz später noch einmal. r/ ist von außen nicht lesbar.
 
 2. Schlüssel und Schlüsselnamen
   Name                     Art                         Darstellung
@@ -24,6 +27,8 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   srv-sig:<n>              Signatur des Servers, Ed25519  öffentlich: base64url ohne „=“ (32 Byte)
   srv-box:<n>              Rückkanal des Servers, age  öffentlich "age1…"
   mod:<bukr>.<modul>:<n>   Modulschlüssel, age         ebenso; je Modul eigener Schlüssel
+  dev:<uid>:<n>            Signatur eines Geräts, Ed25519  geheim: Seed base64url (32 Byte) in der
+                           Startdatei des Geräts; <n> = Fassung seines Benutzerschlüssels
   <uid> = zufällige ID des Teilnehmers, <ablage-id> = ID des Datasets, <n> = Fassung ab 1,
   <modul> = id im Manifest, <bukr> = Buchungskreis. Den Modulschlüssel hat nur, wer das Modul
   bekommt (Rolle); verliert jemand es, verschlüsselt der Export das Paket mit der nächsten
@@ -91,7 +96,7 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
         "signatur": [{"key": "srv-sig:1", "public": "…", "gueltig_ab": "2026-11-06"},
                      {"key": "srv-sig:2", "public": "…", "gueltig_ab": "2027-01-01",
                       "signiert_von": "srv-sig:1", "signatur": "<base64url>"}],
-        "rueckkanal": {"key": "srv-box:1", "public": "age1…"}},
+        "rueckkanal": {"key": "srv-box:1", "public": "age1…", "adresse": "https://…/r/"}},
       "schluessel": [{"key": "ds:7q2k…:1", "secret": "AGE-SECRET-KEY-1…", "dataset": "7q2k…", "gueltig_ab": "2026-11-06"},
                      {"key": "mod:2000.explorer:1", "secret": "AGE-SECRET-KEY-1…", "modul": "explorer", "gueltig_ab": "2026-11-06"}],
       "datasets": [{"id": "7q2k…", "name": "Energie-Monitor Gretchen 2026-10",
@@ -101,14 +106,17 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
         "fassung": 3, "stand": 1, "geliefert": "2026-11-06T14:00:00Z",
         "neu_seit": "2026-11-01T00:00:00Z", "freigabe_bis": "2028-04-30", "modul": "explorer"}],
       "modules": ["explorer"],
-      "hinweise": []
+      "hinweise": [],
+      "geraet": {"nr": 2, "name": "Handy", "signatur": {"key": "dev:<uid>:7", "secret": "<base64url>"}}
     }
     modules: die Module, die der Teilnehmer bekommt (ihre Schlüssel stehen in schluessel). Ein
       Dataset, dessen modul nicht darin steht, kann die App nicht anzeigen (Hinweis zeigen).
     Signatur eines neuen Signaturschlüssels: Ed25519 mit „signiert_von“ über den UTF-8-Text
       "cm1-srv-sig\n" + key + "\n" + public + "\n" + gueltig_ab. Übernehmen nur, wenn gültig.
     Leere Listen datasets und schluessel = gesperrt: alles Lokale löschen.
-    zugang: Zugang zum Rückkanal (später); fehlt bis dahin.
+    geraet: dieses Gerät (ein Teilnehmer kann mehrere haben, jedes mit eigenem Benutzerschlüssel
+      und eigener Startdatei) und sein Signaturschlüssel für Nachrichten (5.6). Fehlt adresse
+      bzw. geraet, gibt es keinen Rückkanal.
   5.2 Dataset-Index
     {
       "id": "7q2k…", "name": "Steuerunterlagen 2026", "fassung": 5, "stand": 2,
@@ -151,6 +159,18 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
      "ereignisse": [{"datum": "2026-10-01T09:00:00Z", "art": {"code": "NOTE", "name": "Notiz"}, "text": "…", "von": "Verwaltung"}],
      "anhaenge": [{"name": "Foto_Bad.jpg", "content_type": "image/jpeg", "ref": "o/77ab…"}]}
     Anhänge sind eigene Datendateien desselben Datasets und stehen auch im Index.
+
+  5.6 Nachricht (Rückkanal), r/<id>
+    Kopf: kind "message", path "r/<id>", key = srv-box:<n> (verschlüsselt für den Server),
+    content_type "application/vnd.coremesh.message+json;v=1", signed_by = dev:<uid>:<n>.
+    <id>: 16–64 Zeichen A–Z a–z 0–9 _ - (zufällig, 16 Byte base64url).
+    {"id": "<id>", "art": "VORGANG_ANMERKUNG", "erstellt": "2026-11-07T08:35:09Z", "modul": "vorgang",
+     "bezug": {"art": "VORGANG", "id": "AF-2026-0003", "dataset": "<ablage-id>"},
+     "daten": {"text": "Es tropft wieder unter der Spüle."}}
+    Die App sendet nur Arten aus dem Manifest des Moduls (rueckkanal) und nur mit Bezug auf ein
+    Dataset dieses Moduls; ohne Netz bleibt die Nachricht im Ausgang und geht später. Der Server
+    prüft Gerät (aktiv), Signatur, Modul, Art (Katalog) und Bezug (Teilnehmer sieht das Dataset)
+    und verarbeitet sie genau einmal (id).
 
 6. Einrichtungslink
   https://<Adresse der PWA>/#cm1:<base64url ohne „=“ von JSON>

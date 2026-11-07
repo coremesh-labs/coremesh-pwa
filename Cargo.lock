@@ -981,6 +981,7 @@ dependencies = [
  "cm1",
  "getrandom",
  "js-sys",
+ "serde",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",

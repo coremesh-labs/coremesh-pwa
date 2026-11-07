@@ -39,6 +39,22 @@ pub async fn fetch(url: &str, no_store: bool) -> Result<Vec<u8>, String> {
     Ok(js_sys::Uint8Array::new(&buf).to_vec())
 }
 
+/// POST (Rückkanal): liefert den HTTP-Status; Err nur ohne Antwort (kein Netz).
+pub async fn post(url: &str, body: &[u8]) -> Result<u16, String> {
+    let init = RequestInit::new();
+    init.set_method("POST");
+    init.set_cache(RequestCache::NoStore);
+    let arr = js_sys::Uint8Array::from(body);
+    init.set_body(&arr.into());
+    let req = Request::new_with_str_and_init(url, &init).map_err(js_err)?;
+    let resp: Response = JsFuture::from(window()?.fetch_with_request(&req))
+        .await
+        .map_err(js_err)?
+        .dyn_into()
+        .map_err(|_| "keine Antwort".to_string())?;
+    Ok(resp.status())
+}
+
 fn storage() -> Option<web_sys::Storage> {
     // Zugriff kann in privaten Fenstern oder bei gesperrten Website-Daten fehlschlagen.
     web_sys::window()?.local_storage().ok().flatten()
