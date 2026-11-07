@@ -227,6 +227,9 @@ pub struct Eintrag {
     /// Nachrichten-ID, wenn der Eintrag aus der App kam (Rückkanal).
     #[serde(default)]
     pub nachricht: String,
+    /// Erfasst am – nur bei einem Nachtrag (zeit = Zeitpunkt des Ereignisses, anderer Tag).
+    #[serde(default)]
+    pub erfasst: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

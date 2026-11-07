@@ -1053,7 +1053,11 @@ fn verlauf_html(d: &Detail, v: &Vorgang) -> String {
             neu,
             if e.text.is_empty() { String::new() } else { format!("<p>{}</p>", esc(&e.text)) }
         );
-        let von = e.von.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+        let mut von = e.von.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+        if !e.erfasst.is_empty() {
+            let nachtrag = format!("erfasst am {}", zeit_de(&e.erfasst));
+            von = if von.is_empty() { nachtrag } else { format!("{von} · {nachtrag}") };
+        }
         let von_html = if von.is_empty() { String::new() } else { format!("<p class=\"meta\">{}</p>", esc(&von)) };
         let system = e.art.as_ref().map(|a| a.system).unwrap_or(false);
         if system {

@@ -137,7 +137,12 @@ Ablage_Format_Spezifikation.txt (Bytes, Index, Schlüssel), Ablage_Ablauf_Konzep
     nicht mit vollem Umfang. Je Kategorie und Position eine Fassung in "sprache".
 
   4.7 Verlauf (Liste "verlauf", älteste zuerst)
-    {nr, zeit (Zeitpunkt), art {code, name, system}, text, von {name}}
+    {nr, zeit (Zeitpunkt), art {code, name, system}, text, von {name}, nachricht, erfasst}
+    Seit 2026.11.05-42 (process 0.10.0): zeit = Zeitpunkt des Ereignisses, sortiert danach (dann nr):
+    ein Nachtrag von Hand („Zeitpunkt des Ereignisses“) bzw. eine Anmerkung aus der App mit dem
+    Zeitpunkt auf dem Gerät (erstellt) steht an ihrer zeitlichen Stelle, auch wenn sie später
+    verarbeitet wurde. erfasst = Zeitpunkt der Erfassung, nur wenn er auf einen anderen Tag fällt.
+    nr bleibt die Reihenfolge der Erfassung (Kennzeichen „neu“ in der App: nr größer als zuletzt).
     nr: laufende Nummer des Eintrags am Server, stabil und steigend – die App erkennt daran
     neue Einträge („neu seit dem letzten Öffnen“). system: true bei Systemeinträgen
     (Statuswechsel, Schritt erledigt); die App darf sie einklappen.
