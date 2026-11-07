@@ -224,6 +224,9 @@ pub struct Eintrag {
     pub text: String,
     #[serde(default)]
     pub von: Option<Person>,
+    /// Nachrichten-ID, wenn der Eintrag aus der App kam (Rückkanal).
+    #[serde(default)]
+    pub nachricht: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

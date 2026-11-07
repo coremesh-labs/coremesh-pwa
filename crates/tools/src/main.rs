@@ -121,6 +121,9 @@ fn fixture(args: &[String]) -> Res<()> {
     let srv = random32()?;
     let srv_pub = verifying_key_b64(&srv);
     let (user_secret, user_pub) = age_pair();
+    // Rückkanal: Schlüssel des Servers (age) und Signaturschlüssel des Geräts (Ed25519)
+    let (box_secret, box_pub) = age_pair();
+    let dev = random32()?;
     let uid = new_id()?;
     let user_key = format!("user:{uid}:1");
     let start_id = new_id()?;
@@ -307,7 +310,7 @@ fn fixture(args: &[String]) -> Res<()> {
                 signiert_von: String::new(),
                 signatur: String::new(),
             }],
-            rueckkanal: None,
+            rueckkanal: Some(cm1::model::Rueckkanal { key: "srv-box:1".into(), public: box_pub.clone(), adresse: format!("{base}r/") }),
         },
         schluessel: vec![
             KeyEntry { key: ds_key.clone(), secret: ds_secret.clone(), dataset: ds_id.clone(), gueltig_ab: "2026-11-06".into() },
@@ -335,6 +338,11 @@ fn fixture(args: &[String]) -> Res<()> {
         .collect(),
         modules: module_entries.iter().map(|m| m.id.clone()).collect(),
         hinweise: vec![],
+        geraet: Some(cm1::model::Geraet {
+            nr: 1,
+            name: "Handy".into(),
+            signatur: Some(cm1::model::GeraetSignatur { key: "dev:wagner:1".into(), secret: cm1::crypto::encode_b64url(&dev) }),
+        }),
     };
     let start_file = seal(
         &Seal {
@@ -366,6 +374,9 @@ fn fixture(args: &[String]) -> Res<()> {
         "Einrichtungslink (Prüfablage):\n\nhttp://localhost:8080/#cm1:{link_b64}\n\nAblage: {base}\nDataset: {ds_id} (Index zuletzt {max_datum})\n"
     );
     write(&out.join("einrichtungslink.txt"), text.as_bytes())?;
+    // nur Prüfablage: zum Öffnen der Nachrichten unter r/ (Gegenprobe des Servers)
+    let pruef = serde_json::json!({"box_key": "srv-box:1", "box_secret": box_secret, "device_key": "dev:wagner:1", "device_public": verifying_key_b64(&dev)});
+    write(&out.join("rueckkanal-pruef.json"), serde_json::to_string_pretty(&pruef)?.as_bytes())?;
     println!("Prüfablage geschrieben nach {}", out.display());
     println!("Einrichtungslink: {}", out.join("einrichtungslink.txt").display());
     Ok(())

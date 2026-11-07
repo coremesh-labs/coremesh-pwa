@@ -2,6 +2,7 @@
 //! Abläufe und Schnittstellen: Ablage_Ablauf_Konzept.txt. Einstieg aus JS: `boot(root)`.
 
 mod ablauf;
+mod ausgang;
 mod module;
 mod net;
 
@@ -64,6 +65,18 @@ pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
     });
     show_home(&st, &root);
     install_home_events(&st, &root);
+    // Rückkanal: wartende Nachrichten jetzt senden, danach alle zwei Minuten erneut versuchen
+    let s2 = st.clone();
+    wasm_bindgen_futures::spawn_local(async move { ausgang::abschicken(&s2).await });
+    let s3 = st.clone();
+    let retry = Closure::<dyn FnMut()>::new(move || {
+        let s4 = s3.clone();
+        wasm_bindgen_futures::spawn_local(async move { ausgang::abschicken(&s4).await });
+    });
+    if let Some(w) = web_sys::window() {
+        let _ = w.set_interval_with_callback_and_timeout_and_arguments_0(retry.as_ref().unchecked_ref(), 120_000);
+    }
+    retry.forget();
     Ok(())
 }
 

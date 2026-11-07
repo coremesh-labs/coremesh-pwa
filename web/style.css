@@ -249,3 +249,12 @@ body:has(.detail, .vg .vorschau) { overflow: hidden; }
 .mieter .wege a { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); text-decoration: none; }
 .mieter .notdienst .wege a.tel { border-color: var(--warn); color: var(--warn); font-weight: 600; }
 .mieter .beteiligte .titel { font-weight: 600; }
+
+/* Rückkanal: Anmerkung an die Verwaltung (Modul Vorgänge) */
+.anmerkung textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin: 4px 0 8px; }
+.anmerkung .ausgang { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 6px; }
+.anmerkung .ausgang li { padding: 8px 10px; border-left: 4px solid var(--line); border-radius: 6px; background: var(--bg); }
+.anmerkung .ausgang li.wartet { border-left-color: var(--warn); }
+.anmerkung .ausgang li.gesendet { border-left-color: var(--accent); }
+.anmerkung .ausgang li.abgewiesen { border-left-color: var(--bad, #b00020); }
+.anmerkung .ausgang p { margin: 2px 0 0; }
