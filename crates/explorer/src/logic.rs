@@ -212,10 +212,90 @@ pub fn total_size(elems: &[&Element]) -> u64 {
     elems.iter().filter(|e| !e.ref_.is_empty()).map(|e| e.groesse).sum()
 }
 
+// ---------- Zusatzangaben: Zahlung (Kontoauszug), Buchungssatz ----------
+
+/// „2026-01-13…“ → „13.01.2026“.
+pub fn datum_de(iso: &str) -> String {
+    let d = iso.get(0..10).unwrap_or(iso);
+    let p: Vec<&str> = d.split('-').collect();
+    if p.len() == 3 && p[0].len() == 4 {
+        format!("{}.{}.{}", p[2], p[1], p[0])
+    } else {
+        iso.to_string()
+    }
+}
+
+/// Dezimaltext „-1234.5“ → „−1.234,50 €“ (andere Währungen mit Kürzel).
+pub fn betrag_de(s: &str, waehrung: &str) -> String {
+    let s = s.trim();
+    let (neg, s) = match s.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, s),
+    };
+    let (ganz, rest) = s.split_once('.').unwrap_or((s, ""));
+    let mut cent: String = rest.chars().take(2).collect();
+    while cent.len() < 2 {
+        cent.push('0');
+    }
+    let digits: Vec<char> = ganz.chars().collect();
+    let mut g = String::new();
+    for (i, c) in digits.iter().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            g.push('.');
+        }
+        g.push(*c);
+    }
+    if g.is_empty() {
+        g.push('0');
+    }
+    let w = match waehrung {
+        "" | "EUR" => "€",
+        x => x,
+    };
+    format!("{}{g},{cent} {w}", if neg { "−" } else { "" })
+}
+
+fn txt<'a>(v: &'a serde_json::Value, k: &str) -> &'a str {
+    v.get(k).and_then(|x| x.as_str()).unwrap_or_default()
+}
+
+/// Angaben einer Art (z. B. "zahlung", "buchung").
+pub fn angaben<'a>(e: &'a Element, art: &str) -> Vec<&'a serde_json::Value> {
+    e.angaben.iter().filter(|a| txt(a, "art") == art).collect()
+}
+
+/// Zahlung in einer Zeile: „bezahlt 13.01.2026 · −13,32 € · Rg. Strom“.
+pub fn zahlung_kurz(z: &serde_json::Value) -> String {
+    let mut s = format!("bezahlt {} · {}", datum_de(txt(z, "datum")), betrag_de(txt(z, "betrag"), txt(z, "waehrung")));
+    let b = txt(z, "betreff");
+    if !b.is_empty() {
+        s.push_str(" · ");
+        s.push_str(b);
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cm1::model::{Code, Kennzeichen, Named};
+
+    #[test]
+    fn betraege_und_zahlung() {
+        assert_eq!(betrag_de("-1332.00", "EUR"), "−1.332,00 €");
+        assert_eq!(betrag_de("13.3", ""), "13,30 €");
+        assert_eq!(betrag_de("1234567.89", "CHF"), "1.234.567,89 CHF");
+        assert_eq!(betrag_de("0.05", "EUR"), "0,05 €");
+        let mut e = Element::default();
+        e.angaben = vec![
+            serde_json::json!({"art": "zahlung", "datum": "2026-01-13", "betrag": "-13.32", "waehrung": "EUR", "betreff": "Rg. Strom"}),
+            serde_json::json!({"art": "buchung", "beleg": "1000000060"}),
+        ];
+        let z = angaben(&e, "zahlung");
+        assert_eq!(z.len(), 1);
+        assert_eq!(zahlung_kurz(z[0]), "bezahlt 13.01.2026 · −13,32 € · Rg. Strom");
+        assert_eq!(angaben(&e, "buchung").len(), 1);
+    }
 
     fn el(nr: u32, ordner: &str, titel: &str, datum: &str, neu: bool) -> Element {
         Element {
