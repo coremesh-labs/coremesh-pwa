@@ -18,7 +18,14 @@ use web_sys::HtmlElement;
 thread_local! {
     /// Schon geladene Module (je Sitzung einmal starten).
     static LOADED: RefCell<HashMap<String, JsValue>> = RefCell::new(HashMap::new());
+    /// Läuft gerade eine Prüfung auf Neues (melden_pruefen)?
+    static PRUEFT: RefCell<bool> = const { RefCell::new(false) };
+    /// Zeitpunkt der letzten Erneuerung (ms), gegen zu häufiges Nachladen.
+    static ERNEUERT: RefCell<f64> = const { RefCell::new(0.0) };
 }
+
+/// Neues prüfen: alle 15 Minuten, solange die App offen ist (dazu beim Zurückkehren in die App).
+const PRUEF_MS: i32 = 15 * 60 * 1000;
 
 const SETUP_HINWEIS: &str = "<main class=\"einrichten\"><h1>Einrichtung nötig</h1>\
     <p>Öffnen Sie den Einrichtungslink aus Ihrem Brief (QR-Code). Danach erscheint hier Ihre Startseite.</p></main>";
@@ -65,6 +72,10 @@ pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
     });
     show_home(&st, &root);
     install_home_events(&st, &root);
+    install_melden(&st, &root);
+    ERNEUERT.with(|e| *e.borrow_mut() = js_sys::Date::now());
+    wasm_bindgen_futures::spawn_local(melden_pruefen(st.clone(), root.clone()));
+    modul_aus_hash(&st, &root);
     // Rückkanal: wartende Nachrichten jetzt senden, danach alle zwei Minuten erneut versuchen
     let s2 = st.clone();
     wasm_bindgen_futures::spawn_local(async move { ausgang::abschicken(&s2).await });
@@ -119,6 +130,8 @@ fn show_home(st: &Shared, root: &HtmlElement) {
     for m in &s.meldungen {
         html.push_str(&format!("<p class=\"status\" role=\"status\">{}</p>", esc(m)));
     }
+    // Neues aus meldenden Modulen (z. B. Aushang): füllt melden_pruefen
+    html.push_str("<section id=\"meldungen\" class=\"meldungen\" aria-live=\"polite\"></section>");
     if let Some(start) = &s.start {
         for h in &start.hinweise {
             let text = h.as_str().map(|t| t.to_string()).unwrap_or_else(|| h.to_string());
@@ -172,34 +185,192 @@ async fn open_module(st: Shared, root: HtmlElement, id: String) {
     set_module_view(&root, Some(&titel));
     area.set_inner_html("<p class=\"laden\">Modul wird geladen …</p>");
 
-    let cached = LOADED.with(|l| l.borrow().get(&id).cloned());
-    let ns = match cached {
-        Some(ns) => ns,
-        None => {
-            let entry = st
-                .borrow()
-                .modules
-                .as_ref()
-                .and_then(|m| m.module.iter().find(|e| e.id == id).cloned());
-            let Some(entry) = entry else {
-                area.set_inner_html("<p class=\"status\">Modul nicht verfügbar (keine Verbindung und nicht lokal).</p>");
-                return;
-            };
-            match module::load(&st, &entry).await {
-                Ok(ns) => {
-                    LOADED.with(|l| l.borrow_mut().insert(id.clone(), ns.clone()));
-                    ns
-                }
-                Err(e) => {
-                    area.set_inner_html(&format!("<p class=\"status\">Modul nicht geladen: {}</p>", esc(&e)));
-                    return;
-                }
-            }
+    let ns = match module_ns(&st, &id).await {
+        Ok(ns) => ns,
+        Err(e) => {
+            area.set_inner_html(&format!("<p class=\"status\">{}</p>", esc(&e)));
+            return;
         }
     };
     let host = module::make_host(&st, &id);
     if let Err(e) = module::mount(&ns, &host, &area).await {
         area.set_inner_html(&format!("<p class=\"status\">Modul-Fehler: {}</p>", esc(&e)));
+    }
+}
+
+/// Geladenes Modul (einmal je Sitzung laden).
+async fn module_ns(st: &Shared, id: &str) -> Result<JsValue, String> {
+    if let Some(ns) = LOADED.with(|l| l.borrow().get(id).cloned()) {
+        return Ok(ns);
+    }
+    let entry = st.borrow().modules.as_ref().and_then(|m| m.module.iter().find(|e| e.id == id).cloned());
+    let Some(entry) = entry else {
+        return Err("Modul nicht verfügbar (keine Verbindung und nicht lokal).".into());
+    };
+    let ns = module::load(st, &entry).await.map_err(|e| format!("Modul nicht geladen: {e}"))?;
+    LOADED.with(|l| l.borrow_mut().insert(id.to_string(), ns.clone()));
+    Ok(ns)
+}
+
+// ---------- Melden: Neues an Kachel, Startseite, Benachrichtigung ----------
+
+/// Ereignisse: regelmäßig prüfen, beim Zurückkehren in die App, nach „gelesen“ eines Moduls,
+/// und #m=<modul> (Benachrichtigung angetippt) öffnet das Modul.
+fn install_melden(st: &Shared, root: &HtmlElement) {
+    let Some(w) = web_sys::window() else { return };
+    let (s1, r1) = (st.clone(), root.clone());
+    let tick = Closure::<dyn FnMut()>::new(move || {
+        wasm_bindgen_futures::spawn_local(erneuern_und_pruefen(s1.clone(), r1.clone(), true));
+    });
+    let _ = w.set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), PRUEF_MS);
+    tick.forget();
+
+    let (s2, r2) = (st.clone(), root.clone());
+    let sichtbar = Closure::<dyn FnMut()>::new(move || {
+        let vis = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| js_sys::Reflect::get(&d, &"visibilityState".into()).ok())
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        if vis == "visible" {
+            wasm_bindgen_futures::spawn_local(erneuern_und_pruefen(s2.clone(), r2.clone(), false));
+        }
+    });
+    if let Some(d) = w.document() {
+        let _ = d.add_event_listener_with_callback("visibilitychange", sichtbar.as_ref().unchecked_ref());
+    }
+    sichtbar.forget();
+
+    let (s3, r3) = (st.clone(), root.clone());
+    let gelesen = Closure::<dyn FnMut()>::new(move || {
+        wasm_bindgen_futures::spawn_local(melden_pruefen(s3.clone(), r3.clone()));
+    });
+    let _ = w.add_event_listener_with_callback("cm1-gelesen", gelesen.as_ref().unchecked_ref());
+    gelesen.forget();
+
+    let (s4, r4) = (st.clone(), root.clone());
+    let hash = Closure::<dyn FnMut()>::new(move || modul_aus_hash(&s4, &r4));
+    let _ = w.add_event_listener_with_callback("hashchange", hash.as_ref().unchecked_ref());
+    hash.forget();
+}
+
+/// „#m=<modul>“: Modul öffnen (z. B. nach Antippen einer Benachrichtigung).
+fn modul_aus_hash(st: &Shared, root: &HtmlElement) {
+    let h = net::location_hash();
+    let Some(id) = h.strip_prefix("#m=") else { return };
+    let id = id.to_string();
+    net::clear_hash();
+    let known = st.borrow().start.as_ref().is_some_and(|s| s.modules.contains(&id));
+    if known {
+        wasm_bindgen_futures::spawn_local(open_module(st.clone(), root.clone(), id));
+    }
+}
+
+/// Startdatei und Indexe neu holen (höchstens jede Minute), dann prüfen.
+async fn erneuern_und_pruefen(st: Shared, root: HtmlElement, immer: bool) {
+    let now = js_sys::Date::now();
+    let last = ERNEUERT.with(|e| *e.borrow());
+    if !immer && now - last < 60_000.0 {
+        return;
+    }
+    ERNEUERT.with(|e| *e.borrow_mut() = now);
+    ablauf::refresh_start(&st).await;
+    let datasets = st.borrow().start.as_ref().map(|s| s.datasets.clone()).unwrap_or_default();
+    for ds in datasets {
+        let _ = ablauf::ensure_index(&st, &ds).await;
+    }
+    melden_pruefen(st, root).await;
+}
+
+#[derive(serde::Deserialize, Default)]
+struct Badge {
+    #[serde(default)]
+    anzahl: u32,
+    #[serde(default)]
+    neu: Vec<serde_json::Value>,
+}
+
+/// Meldende Module (Export `badge(host)`) fragen; Kachel, Hinweise auf der Startseite,
+/// Zähler am App-Symbol und Benachrichtigung (melden.js) aktualisieren.
+async fn melden_pruefen(st: Shared, root: HtmlElement) {
+    if PRUEFT.with(|p| std::mem::replace(&mut *p.borrow_mut(), true)) {
+        return;
+    }
+    let ids = st.borrow().start.as_ref().map(|s| s.modules.clone()).unwrap_or_default();
+    let mut liste = Vec::new();
+    let mut beobachten = Vec::new();
+    let mut hinweise = String::new();
+    let mut gesamt = 0;
+    for id in ids {
+        let Ok(ns) = module_ns(&st, &id).await else { continue };
+        let Ok(f) = js_sys::Reflect::get(&ns, &JsValue::from_str("badge")) else { continue };
+        let Ok(f) = f.dyn_into::<js_sys::Function>() else { continue };
+        let host = module::make_host(&st, &id);
+        let Ok(p) = f.call1(&JsValue::NULL, &host) else { continue };
+        let Ok(v) = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(p)).await else { continue };
+        let b: Badge = serde_json::from_str(&v.as_string().unwrap_or_default()).unwrap_or_default();
+        let (name, ablage, ds) = {
+            let s = st.borrow();
+            let name = s.modules.as_ref().and_then(|m| m.module.iter().find(|e| e.id == id).map(|e| e.name.clone())).unwrap_or_default();
+            (name, s.ablage.clone(), ablauf::module_datasets(&s, &id))
+        };
+        kachel_zahl(&root, &id, b.anzahl);
+        for n in b.neu.iter().take(3) {
+            let titel = n.get("titel").and_then(|t| t.as_str()).unwrap_or_default();
+            hinweise.push_str(&format!(
+                "<button class=\"meldung\" data-act=\"modul\" data-id=\"{}\"><span class=\"badge neu\">neu</span> <strong>{}</strong> <span>{}</span></button>",
+                esc(&id),
+                esc(&name),
+                esc(titel)
+            ));
+        }
+        if b.neu.len() > 3 {
+            hinweise.push_str(&format!(
+                "<button class=\"meldung\" data-act=\"modul\" data-id=\"{}\"><span>… und {} weitere in „{}“</span></button>",
+                esc(&id),
+                b.neu.len() - 3,
+                esc(&name)
+            ));
+        }
+        gesamt += b.anzahl;
+        for d in ds {
+            beobachten.push(serde_json::json!({"url": format!("{ablage}i/{}", d.id), "name": name, "modul": id}));
+        }
+        liste.push(serde_json::json!({"modul": id, "name": name, "neu": b.neu}));
+    }
+    if let Ok(Some(el)) = root.query_selector("#meldungen") {
+        el.set_inner_html(&hinweise);
+    }
+    melden_js("zaehler", &JsValue::from_f64(gesamt as f64));
+    melden_js("melde", &JsValue::from_str(&serde_json::Value::Array(liste).to_string()));
+    melden_js("beobachten", &JsValue::from_str(&serde_json::Value::Array(beobachten).to_string()));
+    PRUEFT.with(|p| *p.borrow_mut() = false);
+}
+
+/// Zahl „n neu“ an der Kachel des Moduls.
+fn kachel_zahl(root: &HtmlElement, id: &str, n: u32) {
+    let Ok(Some(tile)) = root.query_selector(&format!(".tile[data-id=\"{}\"]", esc(id))) else { return };
+    if let Ok(Some(old)) = tile.query_selector(".zahl") {
+        old.remove();
+    }
+    let cls = tile.class_name().replace(" aufmerksam", "");
+    if n > 0 {
+        let _ = tile.insert_adjacent_html("beforeend", &format!("<em class=\"badge warn zahl\">{n} neu</em>"));
+        tile.set_class_name(&format!("{cls} aufmerksam"));
+    } else {
+        tile.set_class_name(&cls);
+    }
+}
+
+/// window.cm1Melden.<f>(arg) aus web/melden.js (fehlt es, passiert nichts).
+fn melden_js(f: &str, arg: &JsValue) {
+    let Some(w) = web_sys::window() else { return };
+    let Ok(m) = js_sys::Reflect::get(&w, &"cm1Melden".into()) else { return };
+    if m.is_undefined() {
+        return;
+    }
+    if let Ok(func) = js_sys::Reflect::get(&m, &JsValue::from_str(f)).and_then(|x| x.dyn_into::<js_sys::Function>()) {
+        let _ = func.call1(&m, arg);
     }
 }
 

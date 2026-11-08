@@ -80,6 +80,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aushang"
+version = "0.1.0"
+dependencies = [
+ "cm1",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
