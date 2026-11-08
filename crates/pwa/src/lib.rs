@@ -239,11 +239,12 @@ fn show_home(st: &Shared, root: &HtmlElement) {
             let Some(entry) = entry else { continue };
             let name = entry.name.clone();
             let n = ablauf::module_datasets(&s, id).len();
+            // Module ohne Daten (z. B. „Melden“): keine Anzahl
+            let unten = if entry.sichtarten.is_empty() { String::new() } else { format!("<span>{n} Datasets</span>") };
             html.push_str(&format!(
-                "<button class=\"tile\" data-act=\"modul\" data-id=\"{}\"><strong>{}</strong><span>{} Datasets</span></button>",
+                "<button class=\"tile\" data-act=\"modul\" data-id=\"{}\"><strong>{}</strong>{unten}</button>",
                 esc(id),
-                esc(&name),
-                n
+                esc(&name)
             ));
         }
         html.push_str("</section>");

@@ -2,9 +2,11 @@
 // Regeln (Ablage_Format_Spezifikation.txt, 1): i/ nie aus dem Zwischenspeicher; o/ und m/ sind
 // unveränderlich (Pfad = SHA-256) und werden dauerhaft gespeichert; die Hülle selbst: Netz zuerst.
 
-const SHELL_CACHE = 'ablage-shell-v15';
+const SHELL_CACHE = 'ablage-shell-v16';
 const SIGNED_CACHE = 'ablage-shell-signiert'; // geprüfte Fassung (shell.sig)
 const TRUST_CACHE = 'ablage-vertrauen-v1'; // Schlüssel des Servers, geprüfte shell.sig, offene Meldungen
+// Ausgang: große Nachrichten (Bilder, PDFs) aus dem Modul „Melden“, bis sie gesendet sind – nie löschen
+const OUTBOX_CACHE = 'ablage-ausgang';
 const WATCH_CACHE = 'ablage-melden-v1'; // beobachtete Indexdateien (melden.js)
 const DATA_CACHE = 'ablage-immutable-v1';
 // Dateien der Hülle: shell.json (schreibt scripts/build.sh), sonst das Nötigste.
@@ -44,7 +46,7 @@ self.addEventListener('message', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => ![SHELL_CACHE, DATA_CACHE, WATCH_CACHE, SIGNED_CACHE, TRUST_CACHE].includes(k)).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => ![SHELL_CACHE, DATA_CACHE, WATCH_CACHE, SIGNED_CACHE, TRUST_CACHE, OUTBOX_CACHE].includes(k)).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
