@@ -38,7 +38,15 @@ pub struct Eintrag {
     /// Die versiegelte Datei (base64url); nach dem Senden leer.
     #[serde(default)]
     pub datei: String,
+    /// Große Nachricht (Bild, PDF): die versiegelte Datei liegt nicht im lokalen Speicher, sondern
+    /// im Cache „ablage-ausgang“ (sie ist für den Server verschlüsselt); nach dem Senden gelöscht.
+    #[serde(default, rename = "extern", skip_serializing_if = "std::ops::Not::not")]
+    pub ausgelagert: bool,
 }
+
+/// Ab dieser Größe geht die versiegelte Nachricht in den Cache statt in den lokalen Speicher
+/// (der hat nur wenige MB für alles).
+const AUSLAGERN_AB: usize = 48 * 1024;
 
 /// Absender „app“: Nachrichten der Hülle selbst (Server: Nachrichtenart mit „Von der App selbst“).
 pub const APP: &str = "app";
@@ -274,6 +282,15 @@ pub async fn senden(st: &Shared, modul: &str, art: &str, eingabe: &Value) -> Res
         let ds: Vec<StartDataset> = start.datasets.clone();
         baue(start, s.modules.as_ref(), &ds, modul, art, eingabe, &id, &jetzt())?
     };
+    let mut e = e;
+    if e.datei.len() > AUSLAGERN_AB {
+        let bytes = decode_b64url(&e.datei).map_err(|x| x.to_string())?;
+        net::cache_put(net::AUSGANG_CACHE, &id, &bytes)
+            .await
+            .map_err(|x| format!("Nachricht nicht gespeichert ({x})"))?;
+        e.datei.clear();
+        e.ausgelagert = true;
+    }
     let mut list = laden();
     list.push(e.clone());
     if !speichern(&list) {
@@ -299,21 +316,32 @@ pub async fn abschicken(st: &Shared) {
         if list[i].status != "wartet" {
             continue;
         }
-        let Ok(bytes) = decode_b64url(&list[i].datei) else {
+        let bytes = if list[i].ausgelagert {
+            net::cache_get(net::AUSGANG_CACHE, &list[i].id).await.ok_or(())
+        } else {
+            decode_b64url(&list[i].datei).map_err(|_| ())
+        };
+        let Ok(bytes) = bytes else {
             list[i].status = "abgewiesen".into();
-            list[i].fehler = "Datei im Ausgang beschädigt".into();
+            list[i].fehler = "Datei im Ausgang beschädigt bzw. nicht mehr da".into();
             continue;
         };
         list[i].versuche += 1;
         match net::post(&format!("{adresse}{}", list[i].id), &bytes).await {
             Ok(code) => match bewerte(code) {
                 Some(true) => {
+                    if list[i].ausgelagert {
+                        net::cache_delete(net::AUSGANG_CACHE, &list[i].id).await;
+                    }
                     list[i].status = "gesendet".into();
                     list[i].gesendet = jetzt();
                     list[i].datei.clear();
                     list[i].fehler.clear();
                 }
                 Some(false) => {
+                    if list[i].ausgelagert {
+                        net::cache_delete(net::AUSGANG_CACHE, &list[i].id).await;
+                    }
                     list[i].status = "abgewiesen".into();
                     list[i].fehler = format!("vom Server abgewiesen (HTTP {code})");
                     list[i].datei.clear();

@@ -276,3 +276,41 @@ mod tests {
         assert!(cm1::crypto::verify_ed25519(&pk, b"cm1-get\ndev:u:1\no/abc\n1700000000123", &arr));
     }
 }
+
+// --- Cache für große Dateien (Ausgang) -------------------------------------------------------
+
+/// Cache für ausgelagerte Nachrichten des Ausgangs (Service Worker lässt ihn stehen).
+pub const AUSGANG_CACHE: &str = "ablage-ausgang";
+
+async fn cache_open(name: &str) -> Result<web_sys::Cache, String> {
+    let w = web_sys::window().ok_or("kein Fenster")?;
+    let cs = w.caches().map_err(js_err)?;
+    let c = wasm_bindgen_futures::JsFuture::from(cs.open(name)).await.map_err(js_err)?;
+    c.dyn_into::<web_sys::Cache>().map_err(|_| "Cache nicht verfügbar".to_string())
+}
+
+fn cache_url(key: &str) -> String {
+    format!("ausgang/{key}")
+}
+
+pub async fn cache_put(name: &str, key: &str, bytes: &[u8]) -> Result<(), String> {
+    let c = cache_open(name).await?;
+    let arr = js_sys::Uint8Array::from(bytes);
+    let resp = web_sys::Response::new_with_opt_buffer_source(Some(&arr)).map_err(js_err)?;
+    wasm_bindgen_futures::JsFuture::from(c.put_with_str(&cache_url(key), &resp)).await.map_err(js_err)?;
+    Ok(())
+}
+
+pub async fn cache_get(name: &str, key: &str) -> Option<Vec<u8>> {
+    let c = cache_open(name).await.ok()?;
+    let v = wasm_bindgen_futures::JsFuture::from(c.match_with_str(&cache_url(key))).await.ok()?;
+    let resp: web_sys::Response = v.dyn_into().ok()?;
+    let buf = wasm_bindgen_futures::JsFuture::from(resp.array_buffer().ok()?).await.ok()?;
+    Some(js_sys::Uint8Array::new(&buf).to_vec())
+}
+
+pub async fn cache_delete(name: &str, key: &str) {
+    if let Ok(c) = cache_open(name).await {
+        let _ = wasm_bindgen_futures::JsFuture::from(c.delete_with_str(&cache_url(key))).await;
+    }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "melden",
+  "name": "Melden",
+  "version": "1.0.0",
+  "einstieg": "melden.js",
+  "content_types": [],
+  "sichtarten": [],
+  "rueckkanal": [
+    "MELDUNG"
+  ],
+  "api": 1
+}

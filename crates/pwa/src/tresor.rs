@@ -169,6 +169,10 @@ pub fn alles_loeschen() {
         }
     }
     net::tresor_setzen(None, None);
+    // ausgelagerte Nachrichten des Ausgangs (Bilder, PDFs) gleich mit
+    if let Some(cs) = web_sys::window().and_then(|w| w.caches().ok()) {
+        let _ = cs.delete(net::AUSGANG_CACHE);
+    }
 }
 
 pub type Weiter = Rc<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
