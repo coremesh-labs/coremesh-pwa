@@ -144,7 +144,9 @@ pub async fn einloesen(code: &str) -> Result<(), String> {
     net::store_set(KEY_CODE, &c);
     let datei = net::fetch(&inv.datei(), true).await.map_err(|e| {
         if e.contains("404") {
-            "Die Einladung gibt es nicht mehr – sie ist abgelaufen, widerrufen oder schon verwendet. Bitte wenden Sie sich an den Absender.".to_string()
+            "Diese Einladung wurde schon verwendet oder ist abgelaufen bzw. widerrufen. Haben Sie die App nicht selbst damit eingerichtet, \
+             melden Sie sich bitte sofort beim Absender – er sperrt das Gerät und schickt Ihnen eine neue Einladung."
+                .to_string()
         } else {
             format!("Einladung nicht geladen: {e}")
         }

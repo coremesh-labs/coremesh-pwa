@@ -221,6 +221,16 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
   Der Export prüft sich in seinen Tests gegen dieselben Dateien; die PWA ebenso.
   Dazu die Prüfablage (Konzept 7.11) für das Zusammenspiel.
 
+7a. PIN in der App (export 0.17.0)
+  Startdatei teilnehmer.pin = {"laenge": 6, "versuche": 5, "sperre_min": 5} (nur bei PIN-Pflicht;
+  strengste Regel der Rollen). Die App legt dann einen eigenen age-Schlüssel an (Tresor im
+  Browser-Speicher „cmT.tresor“: öffentlicher Schlüssel, geheimer Schlüssel mit der PIN
+  verschlüsselt – age/scrypt 2^15 –, Zähler der Fehlversuche). Alle Einträge „cm1.*“, „mod.*“,
+  „cmE.*“ (außer cm1.gemeldet) stehen danach nur als „cmT1:“ + base64url(age(gzip(Wert))) im
+  Speicher. Abfrage bei jedem Öffnen und nach sperre_min Minuten im Hintergrund; nach
+  „versuche“ Fehlversuchen löscht die App alles (neue Einladung nötig). Eine neue Einrichtung
+  (Einladung, neuer Schlüssel) behält Tresor und PIN.
+
 8. Änderungen am Format
   Neue Felder: jederzeit (ignorieren). Neue Schema-Fassung: ;v=N+1, der Export schreibt dann
   eine Zeit lang nicht ohne Not neu. Anderer Byte-Aufbau: "cm2".
