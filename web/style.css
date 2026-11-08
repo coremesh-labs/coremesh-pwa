@@ -187,12 +187,24 @@ img.preview { height: auto; object-fit: contain; }
 .vg .checkliste .done { color: var(--muted); }
 .vg .checkliste .skip { color: var(--muted); font-style: italic; }
 .vg .verlauf p { margin: 2px 0; }
-.vg .dokumente { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.vg .dok { display: flex; gap: 12px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); }
-.vg .dok.fehler { color: var(--muted); }
-.vg .doktext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.vg .thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex: none; }
-.vg .thumb.platz { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.8rem; background: var(--bg); }
+/* Dokumente (alle Module): auf dem Handy Bezeichnung über die ganze Breite, Schaltfläche darunter;
+   ab 600px Schaltfläche rechts. Vorschaubild bzw. „PDF“ klein links. */
+.dokumente { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.dok { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 12px; align-items: start; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); }
+.dok:has(> .thumb) { grid-template-columns: 48px minmax(0, 1fr); }
+.dok > .thumb { grid-row: span 2; }
+.dok > button { justify-self: start; }
+.dok.fehler { color: var(--muted); }
+.doktext { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.doktext .titel { font-weight: 600; overflow-wrap: break-word; hyphens: auto; }
+.thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex: none; }
+.thumb.platz { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.75rem; background: var(--bg); }
+@media (min-width: 600px) {
+  .dok { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .dok:has(> .thumb) { grid-template-columns: 72px minmax(0, 1fr) auto; }
+  .dok > .thumb { grid-row: auto; width: 72px; height: 72px; }
+  .dok > button { grid-row: 1; grid-column: -2 / -1; }
+}
 .vg .baum details { margin: 6px 0 6px 12px; }
 .vg .baum summary { cursor: pointer; padding: 4px 0; }
 .vg table.kz { width: 100%; border-collapse: collapse; }
