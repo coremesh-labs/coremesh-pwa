@@ -321,3 +321,13 @@ body:has(.detail, .vg .vorschau) { overflow: hidden; }
 .detail table.buchungssatz td.sh { width: 4.5em; color: var(--muted); }
 .detail table.buchungssatz td.num { text-align: right; white-space: nowrap; }
 .detail table.buchungssatz .konto { font-variant-numeric: tabular-nums; color: var(--muted); }
+
+/* Über die App (export 0.17.0) */
+.fuss { margin-top: 32px; text-align: center; }
+.home.im-modul > .fuss { display: none; }
+.about h2 { margin-bottom: 0; }
+.about .sub { margin-top: 4px; opacity: .75; }
+.about dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+.about dt { font-weight: 600; }
+.about dd { margin: 0; }
+.about .links { padding-left: 1.2em; }

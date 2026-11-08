@@ -43,7 +43,7 @@ pub struct Eintrag {
 /// Absender „app“: Nachrichten der Hülle selbst (Server: Nachrichtenart mit „Von der App selbst“).
 pub const APP: &str = "app";
 /// Nachrichtenarten, die die Hülle selbst sendet.
-pub const APP_ARTEN: [&str; 2] = ["PUSH_ABO", "EINLADUNG"];
+pub const APP_ARTEN: [&str; 3] = ["PUSH_ABO", "EINLADUNG", "ALARM"];
 
 /// Nachricht bauen. `id`: zufällig (base64url), `jetzt`: ISO-Zeit.
 pub fn baue(

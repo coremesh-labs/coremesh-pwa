@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1d4f6b">
-  <meta name="description" content="Ablage: Unterlagen lesen, öffnen und herunterladen">
-  <title>Ablage</title>
+  <meta name="description" content="CoreMesh Connect: Unterlagen, Aushänge und Nachrichten Ihrer Verwaltung">
+  <title>CoreMesh Connect</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,7 +17,31 @@
   <script type="module" src="melden.js"></script>
   <script type="module" src="pdfview.js"></script>
   <script type="module">
-    import init, { boot } from './pkg/pwa/pwa.js';
+    import init, { boot, alarm_melden } from './pkg/pwa/pwa.js';
+    // Signierte App (export 0.18.0): Schlüssel an den Service Worker, Meldungen zurück an die App
+    window.cm1Sicherheit = {
+      vertrauen(keys) {
+        if (!('serviceWorker' in navigator)) return;
+        navigator.serviceWorker.ready.then((r) => {
+          if (!r.active) return;
+          r.active.postMessage({ art: 'cm1-vertrauen', keys: JSON.parse(keys) });
+          r.active.postMessage({ art: 'cm1-alarme' });
+        }).catch(() => {});
+      },
+    };
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (ev) => {
+        const d = ev.data || {};
+        if (d.art === 'cm1-alarm') alarm_melden(JSON.stringify(d.alarme || [])).catch(console.error);
+        if (d.art === 'cm1-app-neu' && !document.querySelector('.app-neu')) {
+          const p = document.createElement('p');
+          p.className = 'status app-neu';
+          p.innerHTML = 'Eine neue, geprüfte Fassung der App ist bereit. <button class="ghost">Neu laden</button>';
+          p.querySelector('button').addEventListener('click', () => location.reload());
+          document.getElementById('app').prepend(p);
+        }
+      });
+    }
     try {
       await init();
       await boot(document.getElementById('app'));

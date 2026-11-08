@@ -1,0 +1,21 @@
+{
+  "titel": "Über CM Connect",
+  "name": "CoreMesh Connect",
+  "untertitel": "Software für die Immobilienverwaltung",
+  "absaetze": [
+    "CoreMesh Connect ist die App zu CoreMesh, der Software für Hausverwaltungen: Buchhaltung, Dokumente, Vorgänge und Abrechnungen – und für Mieter, Eigentümer und Partner diese App mit ihren Unterlagen.",
+    "Ihre Unterlagen sind auf dem Weg zu Ihrem Gerät verschlüsselt. Die Schlüssel hat nur Ihr Gerät."
+  ],
+  "links": [
+    {
+      "text": "CoreMesh auf GitHub",
+      "url": "https://github.com/coremesh-labs"
+    }
+  ],
+  "lizenzen": [
+    {
+      "text": "PDF-Anzeige: pdf.js (Apache License 2.0)",
+      "url": "vendor/pdfjs/LICENSE"
+    }
+  ]
+}

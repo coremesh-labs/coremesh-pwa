@@ -46,7 +46,18 @@ done
 
 # App: web/ ohne Prüfablage und Einrichtungslink
 mkdir -p build/app
-cp -r web/index.html web/sw.js web/pdfview.js web/nav.js web/melden.js web/manifest.webmanifest web/style.css web/icon.svg web/vendor build/app/
+cp -r web/index.html web/sw.js web/pdfview.js web/nav.js web/melden.js web/manifest.webmanifest web/style.css web/icon.svg web/icon-*.png web/vendor build/app/
+# „Über die App“: Inhalt aus web/about.json, dazu Stand und Fassungen dieses Baus
+python3 - "$root" <<'PY'
+import json, subprocess, sys, datetime
+root = sys.argv[1]
+a = json.load(open(f"{root}/web/about.json", encoding="utf-8"))
+rev = subprocess.run(["git", "-C", root, "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+a["stand"] = datetime.date.today().isoformat()
+a["commit"] = rev
+a["module"] = {m: json.load(open(f"{root}/crates/{m}/manifest.json", encoding="utf-8"))["version"] for m in ["explorer", "vorgang", "mieter", "aushang"]}
+json.dump(a, open(f"{root}/build/app/about.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+PY
 mkdir -p build/app/pkg && cp -r web/pkg/pwa build/app/pkg/ && rm -f build/app/pkg/pwa/*.d.ts
 # Dateiliste der Hülle für den Service Worker (offline-Start, auch die snippets von wasm-bindgen)
 (cd build/app && find . -type f ! -name sw.js ! -name shell.json ! -name 'HERKUNFT.txt' ! -name LICENSE | sed 's#^\./##' | sort |
