@@ -76,6 +76,9 @@ pub struct Element {
     /// "o/<sha256>" bzw. leer (Element ohne Datei).
     #[serde(default, rename = "ref")]
     pub ref_: String,
+    /// Zusatzangaben der Fachmodule (z. B. {"art": "zahlung", …}, {"art": "buchung", …}).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub angaben: Vec<serde_json::Value>,
 }
 
 /// Dataset-Index (Spezifikation 5.2), `i/<ablage-id>`.

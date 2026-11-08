@@ -289,3 +289,19 @@ body:has(.detail, .vg .vorschau) { overflow: hidden; }
 .aushang-modul .aushang p { margin: 4px 0 0; }
 .aushang-modul .aushang .dokumente { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; }
 .aushang-modul .melden { margin: 0 0 12px; }
+
+/* Zusatzangaben am Dokument (Modul „Dateien“): Zahlung aus dem Kontoauszug, Buchungssätze */
+.rowbtn .zahlung { display: block; font-size: 0.9rem; color: var(--ok, #1a7f37); overflow-wrap: anywhere; }
+.detail .angaben { margin: 12px 0; }
+.detail .angaben h3 { font-size: 1rem; margin: 0 0 6px; }
+.detail .zahlungen { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.detail .zahlungen li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); }
+.detail .zahlungen .betrag { font-weight: 600; }
+.detail .zahlungen .betreff { overflow-wrap: anywhere; }
+.detail .buchung { padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 6px; }
+.detail .buchung p { margin: 0 0 2px; overflow-wrap: anywhere; }
+.detail table.buchungssatz { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 0.92rem; }
+.detail table.buchungssatz td { padding: 4px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+.detail table.buchungssatz td.sh { width: 4.5em; color: var(--muted); }
+.detail table.buchungssatz td.num { text-align: right; white-space: nowrap; }
+.detail table.buchungssatz .konto { font-variant-numeric: tabular-nums; color: var(--muted); }

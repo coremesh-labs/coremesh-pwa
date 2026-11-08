@@ -234,6 +234,7 @@ fn fixture(args: &[String]) -> Res<()> {
             neu: s.neu,
             ersetzt_durch: s.ersetzt,
             ref_,
+            ..Default::default()
         });
     }
 

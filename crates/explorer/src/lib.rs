@@ -746,10 +746,20 @@ fn rows_html(a: &App) -> String {
             esc(e.partner.as_ref().map(|p| p.name.as_str()).unwrap_or("")),
             if e.ref_.is_empty() { "–".to_string() } else { logic::human_size(e.groesse) }
         );
+        // Zusatzangaben: Zahlung aus dem Kontoauszug (Datum, Betrag, Betreff)
+        let zahlungen = logic::angaben(e, "zahlung");
+        let zahlung = match zahlungen.first() {
+            Some(z) => format!(
+                "<span class=\"zahlung\">{}{}</span>",
+                esc(&logic::zahlung_kurz(z)),
+                if zahlungen.len() > 1 { format!(" (+{} weitere)", zahlungen.len() - 1) } else { String::new() }
+            ),
+            None => String::new(),
+        };
         html.push_str(&format!(
             "<li class=\"row{}{}\"><input type=\"checkbox\" data-act=\"toggle\" data-nr=\"{}\" aria-label=\"auswählen\"{}>\
              <button class=\"rowbtn\" data-act=\"show\" data-nr=\"{}\"><span class=\"titel\">{}</span>\
-             <span class=\"meta\">{}</span><span class=\"tags\">{}{}{}</span></button></li>",
+             <span class=\"meta\">{}</span>{zahlung}<span class=\"tags\">{}{}{}</span></button></li>",
             if flagged { " flagged" } else { "" },
             if a.shown == Some(e.nr) { " current" } else { "" },
             e.nr,
@@ -818,7 +828,7 @@ fn detail_html(a: &App, e: &Element, vis: &[&Element]) -> String {
         "<section class=\"detail\"><h2>{}</h2>\
          <dl><dt>Datei</dt><dd>{}</dd><dt>Ordner</dt><dd>{}</dd><dt>Datum</dt><dd>{}</dd>\
          <dt>Art</dt><dd>{}</dd><dt>Partner</dt><dd>{}</dd><dt>Größe</dt><dd>{}</dd>\
-         <dt>Kennzeichen</dt><dd>{}</dd><dt>Ersetzt durch</dt><dd>{}</dd></dl>{}{}</section>",
+         <dt>Kennzeichen</dt><dd>{}</dd><dt>Ersetzt durch</dt><dd>{}</dd></dl>{}{}{}</section>",
         esc(if e.titel.is_empty() { &e.name } else { &e.titel }),
         esc(&e.name),
         esc(&e.ordner),
@@ -828,7 +838,59 @@ fn detail_html(a: &App, e: &Element, vis: &[&Element]) -> String {
         if e.ref_.is_empty() { "–".into() } else { logic::human_size(e.groesse) },
         kz,
         nachfolger,
+        angaben_html(e),
         body,
         nav
     )
+}
+
+/// Zahlungen (Kontoauszug) und Buchungssätze eines Dokuments (Zusatzangaben der Fachmodule).
+fn angaben_html(e: &Element) -> String {
+    let t = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let mut h = String::new();
+    let zahlungen = logic::angaben(e, "zahlung");
+    if !zahlungen.is_empty() {
+        h.push_str("<section class=\"angaben\"><h3>Zahlung (Kontoauszug)</h3><ul class=\"zahlungen\">");
+        for z in zahlungen {
+            let konto = z.get("konto").map(|k| t(k, "name")).filter(|n| !n.is_empty()).unwrap_or_else(|| z.get("konto").map(|k| t(k, "id")).unwrap_or_default());
+            h.push_str(&format!(
+                "<li><span class=\"betrag\">{}</span> <span class=\"meta\">{}{}</span>\
+                 <span class=\"betreff\">{}</span><span class=\"meta\">{}</span></li>",
+                esc(&logic::betrag_de(&t(z, "betrag"), &t(z, "waehrung"))),
+                esc(&logic::datum_de(&t(z, "datum"))),
+                if konto.is_empty() { String::new() } else { format!(" · {}", esc(&konto)) },
+                esc(&t(z, "betreff")),
+                esc(&t(z, "gegenpartei"))
+            ));
+        }
+        h.push_str("</ul></section>");
+    }
+    let buchungen = logic::angaben(e, "buchung");
+    if !buchungen.is_empty() {
+        h.push_str("<section class=\"angaben\"><h3>Buchungssätze</h3>");
+        for b in buchungen {
+            let jahr = b.get("jahr").map(|j| j.to_string()).unwrap_or_default();
+            h.push_str(&format!(
+                "<div class=\"buchung\"><p><strong>Beleg {}</strong>{} · {}{}</p><p class=\"meta\">{}</p><table class=\"buchungssatz\">",
+                esc(&t(b, "beleg")),
+                if jahr.is_empty() { String::new() } else { format!("/{}", esc(&jahr)) },
+                esc(&logic::datum_de(&t(b, "datum"))),
+                if t(b, "belegart").is_empty() { String::new() } else { format!(" · Belegart {}", esc(&t(b, "belegart"))) },
+                esc(&t(b, "text"))
+            ));
+            let w = t(b, "waehrung");
+            for z in b.get("zeilen").and_then(|z| z.as_array()).into_iter().flatten() {
+                let sh = if t(z, "sh") == "S" { "Soll" } else { "Haben" };
+                h.push_str(&format!(
+                    "<tr><td class=\"sh\">{sh}</td><td><span class=\"konto\">{}</span> {}</td><td class=\"num\">{}</td></tr>",
+                    esc(&t(z, "konto")),
+                    esc(&t(z, "name")),
+                    esc(&logic::betrag_de(&t(z, "betrag"), &w))
+                ));
+            }
+            h.push_str("</table></div>");
+        }
+        h.push_str("</section>");
+    }
+    h
 }
