@@ -1,0 +1,14 @@
+{
+  "id": "aushang",
+  "name": "Aushang",
+  "version": "1.0.0",
+  "einstieg": "aushang.js",
+  "content_types": [
+    "application/vnd.coremesh.notices+json;v=1"
+  ],
+  "sichtarten": [
+    "AUSHANG"
+  ],
+  "rueckkanal": [],
+  "api": 1
+}

@@ -258,3 +258,22 @@ body:has(.detail, .vg .vorschau) { overflow: hidden; }
 .anmerkung .ausgang li.gesendet { border-left-color: var(--accent); }
 .anmerkung .ausgang li.abgewiesen { border-left-color: var(--bad, #b00020); }
 .anmerkung .ausgang p { margin: 2px 0 0; }
+
+/* Melden: Neues aus Modulen (Kachel, Hinweise auf der Startseite) */
+.meldungen { display: grid; gap: 8px; margin: 0 0 12px; }
+.meldungen:empty { display: none; }
+.meldung { text-align: left; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 12px 14px; border-left: 4px solid var(--warn); background: var(--warn-bg); }
+.meldung span:not(.badge) { color: var(--muted); }
+.home.im-modul .meldungen { display: none; }
+.tile.aufmerksam { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn-bg); }
+.tile .zahl { align-self: flex-start; font-style: normal; color: var(--warn); }
+
+/* Modul „Aushang“ */
+.aushang-modul h2 { margin: 18px 0 8px; }
+.aushang-modul .aushaenge { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.aushang-modul .aushang { padding: 12px 14px; border-left: 4px solid var(--line); border-radius: 6px; background: var(--bg); display: flex; flex-direction: column; gap: 4px; }
+.aushang-modul .aushang.aktuell { border-left-color: var(--warn); background: var(--warn-bg); }
+.aushang-modul .aushang.neu { box-shadow: 0 0 0 2px var(--neu-bg); }
+.aushang-modul .aushang p { margin: 4px 0 0; }
+.aushang-modul .aushang .dokumente { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; }
+.aushang-modul .melden { margin: 0 0 12px; }
