@@ -2,7 +2,7 @@
 // Regeln (Ablage_Format_Spezifikation.txt, 1): i/ nie aus dem Zwischenspeicher; o/ und m/ sind
 // unveränderlich (Pfad = SHA-256) und werden dauerhaft gespeichert; die Hülle selbst: Netz zuerst.
 
-const SHELL_CACHE = 'ablage-shell-v12';
+const SHELL_CACHE = 'ablage-shell-v13';
 const WATCH_CACHE = 'ablage-melden-v1'; // beobachtete Indexdateien (melden.js)
 const DATA_CACHE = 'ablage-immutable-v1';
 // Dateien der Hülle: shell.json (schreibt scripts/build.sh), sonst das Nötigste.

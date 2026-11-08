@@ -84,6 +84,28 @@ pub fn age_decrypt(secret: &str, cipher: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// age-Entschlüsselung mit einer Passphrase (scrypt) – Einladungsdatei, verschlüsselt mit dem
+/// Einladungscode (export 0.16.0). Die Passphrase wird wie beim Server normalisiert (normalize_code).
+pub fn age_decrypt_passphrase(passphrase: &str, cipher: &[u8]) -> Result<Vec<u8>> {
+    let mut id = age::scrypt::Identity::new(age::secrecy::SecretString::from(passphrase.to_string()));
+    id.set_max_work_factor(20);
+    let decryptor = age::Decryptor::new(cipher)
+        .map_err(|e| crate::Error::new(ErrorCode::Decrypt, format!("age-Kopf: {e}")))?;
+    let mut reader = decryptor
+        .decrypt(std::iter::once(&id as &dyn age::Identity))
+        .map_err(|e| crate::Error::new(ErrorCode::Decrypt, format!("age: {e}")))?;
+    let mut out = Vec::new();
+    reader
+        .read_to_end(&mut out)
+        .map_err(|e| crate::Error::new(ErrorCode::Decrypt, format!("age lesen: {e}")))?;
+    Ok(out)
+}
+
+/// Einladungscode normalisieren: Großbuchstaben und Ziffern, ohne Trenner („7kq4-m9tx 2hpa“ → „7KQ4M9TX2HPA“).
+pub fn normalize_code(code: &str) -> String {
+    code.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_uppercase()).collect()
+}
+
 /// Öffentlicher Teil eines age-Schlüssels („age1…“) zum geheimen.
 pub fn age_public(secret: &str) -> Result<String> {
     let id = age::x25519::Identity::from_str(secret)

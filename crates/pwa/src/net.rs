@@ -69,6 +69,12 @@ pub fn store_set(key: &str, value: &str) -> bool {
 }
 
 /// Entfernt alle Einträge, deren Schlüssel mit `prefix` beginnt.
+pub fn store_remove(key: &str) {
+    if let Some(s) = storage() {
+        let _ = s.remove_item(key);
+    }
+}
+
 pub fn store_clear_prefix(prefix: &str) {
     let Some(s) = storage() else { return };
     let n = s.length().unwrap_or(0);
