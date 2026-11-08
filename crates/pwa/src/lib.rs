@@ -25,6 +25,8 @@ thread_local! {
     static PRUEFT: RefCell<bool> = const { RefCell::new(false) };
     /// Zeitpunkt der letzten Erneuerung (ms), gegen zu häufiges Nachladen.
     static ERNEUERT: RefCell<f64> = const { RefCell::new(0.0) };
+    /// Laufende App (für Meldungen des Service Workers).
+    static LAUF: RefCell<Option<(Shared, HtmlElement)>> = const { RefCell::new(None) };
 }
 
 /// Neues prüfen: alle 15 Minuten, solange die App offen ist (dazu beim Zurückkehren in die App).
@@ -115,6 +117,8 @@ async fn start(root: HtmlElement) -> Result<(), JsValue> {
         }
     });
     show_home(&st, &root);
+    LAUF.with(|l| *l.borrow_mut() = Some((st.clone(), root.clone())));
+    vertrauen_an_sw(&st);
     install_home_events(&st, &root);
     install_melden(&st, &root);
     ERNEUERT.with(|e| *e.borrow_mut() = js_sys::Date::now());
@@ -136,6 +140,51 @@ async fn start(root: HtmlElement) -> Result<(), JsValue> {
     }
     retry.forget();
     Ok(())
+}
+
+/// Signierte App (export 0.18.0): dem Service Worker die Signaturschlüssel des Servers geben,
+/// denen die App vertraut (Einrichtung und geprüfte Kette); er prüft damit app/shell.sig.
+fn vertrauen_an_sw(st: &Shared) {
+    let s = st.borrow();
+    let mut keys = vec![serde_json::json!({"key": s.setup.sig.key, "public": s.setup.sig.public})];
+    if let Some(list) = net::store_get("cm1.trust").and_then(|j| serde_json::from_str::<Vec<(String, String)>>(&j).ok()) {
+        for (key, public) in list {
+            keys.push(serde_json::json!({"key": key, "public": public}));
+        }
+    }
+    sicherheit_js("vertrauen", &JsValue::from_str(&serde_json::Value::Array(keys).to_string()));
+}
+
+fn sicherheit_js(f: &str, arg: &JsValue) {
+    let Some(w) = web_sys::window() else { return };
+    let Ok(m) = js_sys::Reflect::get(&w, &"cm1Sicherheit".into()) else { return };
+    if m.is_undefined() {
+        return;
+    }
+    if let Ok(func) = js_sys::Reflect::get(&m, &JsValue::from_str(f)).and_then(|x| x.dyn_into::<js_sys::Function>()) {
+        let _ = func.call1(&m, arg);
+    }
+}
+
+/// Meldungen des Service Workers (App-Dateien ohne gültige Signatur): Hinweis zeigen und über den
+/// Rückkanal an den Server (Nachrichtenart ALARM → Sicherheitsmeldungen).
+#[wasm_bindgen]
+pub async fn alarm_melden(json: String) {
+    let Some((st, root)) = LAUF.with(|l| l.borrow().clone()) else { return };
+    let alarme: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+    if alarme.is_empty() {
+        return;
+    }
+    if let Ok(Some(main)) = root.query_selector("main.home") {
+        let _ = main.insert_adjacent_html(
+            "afterbegin",
+            "<p class=\"status warn\" role=\"alert\"><b>Achtung:</b> Die App-Dateien vom Server waren nicht richtig signiert – \
+             möglicherweise wurde die Verbindung manipuliert. Die App nutzt weiter die geprüfte Fassung; der Absender wird informiert.</p>",
+        );
+    }
+    for a in alarme {
+        let _ = ausgang::senden(&st, ausgang::APP, "ALARM", &serde_json::json!({"daten": a})).await;
+    }
 }
 
 /// „#cm1:<base64url-JSON>“ → Einrichtungsdaten (Spezifikation 6).
@@ -199,7 +248,8 @@ fn show_home(st: &Shared, root: &HtmlElement) {
         }
         html.push_str("</section>");
     }
-    html.push_str("<div id=\"modul\" class=\"modul\"></div></main>");
+    html.push_str("<div id=\"modul\" class=\"modul\"></div>");
+    html.push_str("<footer class=\"fuss\"><button class=\"ghost\" data-act=\"about\">Über die App</button></footer></main>");
     root.set_inner_html(&html);
 }
 
@@ -210,6 +260,10 @@ fn install_home_events(st: &Shared, root: &HtmlElement) {
         let Some(target) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
         if let Ok(Some(_)) = target.closest("[data-act=back][data-shell]") {
             close_module(&root2);
+            return;
+        }
+        if let Ok(Some(_)) = target.closest("[data-act=about]") {
+            wasm_bindgen_futures::spawn_local(open_about(st.clone(), root2.clone()));
             return;
         }
         let Ok(Some(el)) = target.closest("[data-act=modul]") else { return };
@@ -243,6 +297,89 @@ async fn open_module(st: Shared, root: HtmlElement, id: String) {
     if let Err(e) = module::mount(&ns, &host, &area).await {
         area.set_inner_html(&format!("<p class=\"status\">Modul-Fehler: {}</p>", esc(&e)));
     }
+}
+
+#[derive(serde::Deserialize, Default)]
+struct About {
+    #[serde(default)]
+    titel: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    untertitel: String,
+    #[serde(default)]
+    absaetze: Vec<String>,
+    #[serde(default)]
+    links: Vec<AboutLink>,
+    #[serde(default)]
+    lizenzen: Vec<AboutLink>,
+    #[serde(default)]
+    stand: String,
+    #[serde(default)]
+    commit: String,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct AboutLink {
+    text: String,
+    url: String,
+}
+
+fn link_html(l: &AboutLink) -> String {
+    // nur http(s) und Dateien der App (relativ)
+    let ok = l.url.starts_with("https://") || l.url.starts_with("http://") || !l.url.contains(':');
+    if !ok {
+        return format!("<li>{}</li>", esc(&l.text));
+    }
+    format!("<li><a href=\"{}\" target=\"_blank\" rel=\"noopener\">{}</a></li>", esc(&l.url), esc(&l.text))
+}
+
+/// „Über die App“ (Inhalt about.json der App, seit export 0.17.0): Projekt, Links, Fassungen, Lizenzen.
+async fn open_about(st: Shared, root: HtmlElement) {
+    let Some(area) = fresh_area(&root) else { return };
+    let a: About = net::fetch("about.json", false).await.ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    let titel = if a.titel.is_empty() { "Über die App".to_string() } else { a.titel.clone() };
+    set_module_view(&root, Some(&titel));
+    let mut html = String::from("<section class=\"about\">");
+    if !a.name.is_empty() {
+        html += &format!("<h2>{}</h2>", esc(&a.name));
+    }
+    if !a.untertitel.is_empty() {
+        html += &format!("<p class=\"sub\">{}</p>", esc(&a.untertitel));
+    }
+    for p in &a.absaetze {
+        html += &format!("<p>{}</p>", esc(p));
+    }
+    if !a.links.is_empty() {
+        html += "<ul class=\"links\">";
+        html += &a.links.iter().map(link_html).collect::<String>();
+        html += "</ul>";
+    }
+    html += "<h3>Diese App</h3><dl>";
+    if !a.stand.is_empty() {
+        html += &format!("<dt>Stand</dt><dd>{}{}</dd>", esc(&ablauf::tag(&a.stand)), if a.commit.is_empty() { String::new() } else { format!(" ({})", esc(&a.commit)) });
+    }
+    html += &format!("<dt>PIN-Schutz</dt><dd>{}</dd>", if tresor::vorhanden() { "an" } else { "aus" });
+    {
+        let s = st.borrow();
+        let wanted = s.start.as_ref().map(|x| x.modules.clone()).unwrap_or_default();
+        let mods: Vec<String> = s
+            .modules
+            .as_ref()
+            .map(|m| m.module.iter().filter(|e| wanted.contains(&e.id)).map(|e| format!("{} {}", e.name, e.version).trim().to_string()).collect())
+            .unwrap_or_default();
+        if !mods.is_empty() {
+            html += &format!("<dt>Module</dt><dd>{}</dd>", esc(&mods.join(", ")));
+        }
+    }
+    html += "</dl>";
+    if !a.lizenzen.is_empty() {
+        html += "<h3>Lizenzen</h3><ul class=\"links\">";
+        html += &a.lizenzen.iter().map(link_html).collect::<String>();
+        html += "</ul>";
+    }
+    html += "</section>";
+    area.set_inner_html(&html);
 }
 
 /// Geladenes Modul (einmal je Sitzung laden).

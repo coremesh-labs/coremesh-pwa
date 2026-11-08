@@ -91,6 +91,12 @@ pub fn new_state(setup: SetupLink) -> Shared {
 
 /// Schlüsselbund = eigener Benutzerschlüssel + Schlüssel aus der Startdatei (Spezifikation 4a).
 fn apply_keys(st: &mut State, start: &Start) {
+    // seit export 0.18.0: Abrufe mit dem Signaturschlüssel des Geräts signieren
+    if let Some(sig) = start.geraet.as_ref().and_then(|g| g.signatur.as_ref()) {
+        if let Some(seed) = decode_b64url(&sig.secret).ok().and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()) {
+            net::signer_setzen(&st.ablage, &sig.key, seed);
+        }
+    }
     let mut kr = Keyring::new();
     kr.add(&st.setup.key.name, &st.setup.key.secret);
     for k in &start.schluessel {

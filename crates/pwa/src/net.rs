@@ -20,18 +20,62 @@ fn window() -> Result<web_sys::Window, String> {
     web_sys::window().ok_or_else(|| "kein Fenster".to_string())
 }
 
-/// GET. `no_store`: für veränderliche Dateien (i/), damit nie eine alte Fassung aus dem Browser kommt.
-pub async fn fetch(url: &str, no_store: bool) -> Result<Vec<u8>, String> {
+// Signierte Abrufe (export 0.18.0): Abrufe aus der Ablage (i/, o/, m/) tragen den Kopf
+// X-CM1-Signatur: "<Gerät> <Zeit ms> <Ed25519 über cm1-get\n<Gerät>\n<Pfad>\n<Zeit>>"; der Worker
+// prüft ihn gegen die Geräteliste. Lehnt er ab (403: z. B. neuer Schlüssel noch nicht bekannt,
+// Uhr falsch), versucht die App es einmal ohne – ob das reicht, entscheidet die Regel des Ziels.
+thread_local! {
+    static SIGNER: std::cell::RefCell<Option<(String, String, [u8; 32])>> = const { std::cell::RefCell::new(None) };
+}
+
+pub const SIG_HEADER: &str = "X-CM1-Signatur";
+
+/// Ablage (mit „/“ am Ende), Name und Seed des Signaturschlüssels dieses Geräts.
+pub fn signer_setzen(ablage: &str, key: &str, seed: [u8; 32]) {
+    SIGNER.with(|s| *s.borrow_mut() = Some((ablage.to_string(), key.to_string(), seed)));
+}
+
+/// Kopf für einen Abruf; None = nicht aus der Ablage bzw. kein Schlüssel.
+pub fn signatur_fuer(url: &str, jetzt_ms: f64) -> Option<String> {
+    SIGNER.with(|s| {
+        let s = s.borrow();
+        let (ablage, key, seed) = s.as_ref()?;
+        let rest = url.strip_prefix(ablage.as_str())?;
+        let path = rest.split(['?', '#']).next()?;
+        if !(path.starts_with("i/") || path.starts_with("o/") || path.starts_with("m/")) {
+            return None;
+        }
+        let t = format!("{}", jetzt_ms as u64);
+        let sig = cm1::crypto::sign_ed25519(seed, format!("cm1-get\n{key}\n{path}\n{t}").as_bytes());
+        Some(format!("{key} {t} {}", cm1::crypto::encode_b64url(&sig)))
+    })
+}
+
+async fn get(url: &str, no_store: bool, signatur: Option<&str>) -> Result<Response, String> {
     let init = RequestInit::new();
     if no_store {
         init.set_cache(RequestCache::NoStore);
     }
+    if let Some(sig) = signatur {
+        let h = web_sys::Headers::new().map_err(js_err)?;
+        h.set(SIG_HEADER, sig).map_err(js_err)?;
+        init.set_headers(&h);
+    }
     let req = Request::new_with_str_and_init(url, &init).map_err(js_err)?;
-    let resp: Response = JsFuture::from(window()?.fetch_with_request(&req))
+    JsFuture::from(window()?.fetch_with_request(&req))
         .await
         .map_err(js_err)?
         .dyn_into()
-        .map_err(|_| "keine Antwort".to_string())?;
+        .map_err(|_| "keine Antwort".to_string())
+}
+
+/// GET. `no_store`: für veränderliche Dateien (i/), damit nie eine alte Fassung aus dem Browser kommt.
+pub async fn fetch(url: &str, no_store: bool) -> Result<Vec<u8>, String> {
+    let sig = signatur_fuer(url, js_sys::Date::now());
+    let mut resp = get(url, no_store, sig.as_deref()).await?;
+    if resp.status() == 403 && sig.is_some() {
+        resp = get(url, no_store, None).await?;
+    }
     if !resp.ok() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -210,5 +254,25 @@ pub fn clear_hash() {
 pub fn mark_offline(on: bool) {
     if let Some(el) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element()) {
         let _ = if on { el.set_attribute("data-offline", "1") } else { el.remove_attribute("data-offline") };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signierte_abrufe() {
+        let seed = [7u8; 32];
+        signer_setzen("https://x.example/", "dev:u:1", seed);
+        assert!(signatur_fuer("https://x.example/app/index.html", 1.0).is_none());
+        assert!(signatur_fuer("https://anders.example/o/abc", 1.0).is_none());
+        let h = signatur_fuer("https://x.example/o/abc?x=1", 1700000000123.0).unwrap();
+        let teile: Vec<&str> = h.split(' ').collect();
+        assert_eq!(&teile[..2], &["dev:u:1", "1700000000123"]);
+        let sig = cm1::crypto::decode_b64url(teile[2]).unwrap();
+        let pk = cm1::crypto::parse_verifying_key(&cm1::crypto::verifying_key_b64(&seed)).unwrap();
+        let arr: [u8; 64] = sig.as_slice().try_into().unwrap();
+        assert!(cm1::crypto::verify_ed25519(&pk, b"cm1-get\ndev:u:1\no/abc\n1700000000123", &arr));
     }
 }
