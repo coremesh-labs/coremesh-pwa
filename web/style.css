@@ -112,6 +112,13 @@ label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tile span { color: var(--muted); font-size: 0.9rem; }
 .modul { margin-top: 8px; }
 .einrichten h1 { margin-top: 24px; }
+/* Einladung (Link + Code) */
+.einladung form { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+.einladung input[name=code] { flex: 1 1 12em; font: 600 1.25rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em;
+  text-transform: uppercase; padding: 10px 12px; border: 1px solid var(--line, #ccc); border-radius: var(--radius); }
+.einladung button { padding: 10px 16px; }
+.einladung .fehler { color: var(--warn); }
+.einladung .hinweis { margin-top: 12px; }
 
 /* Explorer */
 .xf .toolbar { display: grid; gap: 10px; margin-bottom: 12px; }

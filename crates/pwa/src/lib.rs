@@ -3,6 +3,7 @@
 
 mod ablauf;
 mod ausgang;
+mod einladung;
 mod module;
 mod net;
 
@@ -28,7 +29,7 @@ thread_local! {
 const PRUEF_MS: i32 = 15 * 60 * 1000;
 
 const SETUP_HINWEIS: &str = "<main class=\"einrichten\"><h1>Einrichtung nötig</h1>\
-    <p>Öffnen Sie den Einrichtungslink aus Ihrem Brief (QR-Code). Danach erscheint hier Ihre Startseite.</p></main>";
+    <p>Öffnen Sie den Einladungslink aus Ihrer E-Mail bzw. Ihrem Brief (QR-Code) und geben Sie den Einladungscode ein. Danach erscheint hier Ihre Startseite.</p></main>";
 
 /// Einstieg: liest den Einrichtungslink (falls vorhanden), holt die Startdatei und zeigt die Startseite.
 #[wasm_bindgen]
@@ -37,9 +38,18 @@ pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
     if let Some(setup) = parse_setup_hash(&hash) {
         ablauf::save_setup(&setup);
         net::clear_hash();
+    } else if einladung::aus_hash(&hash) {
+        // seit export 0.16.0: Einladungslink bzw. -code – Einladung zeigen (wartet auf den zweiten Teil)
+        net::clear_hash();
+        einladung::zeigen(&root, "");
+        return Ok(());
     }
     let Some(setup) = ablauf::load_setup() else {
-        root.set_inner_html(SETUP_HINWEIS);
+        if einladung::offen().is_some() || !einladung::code().is_empty() {
+            einladung::zeigen(&root, "");
+        } else {
+            root.set_inner_html(SETUP_HINWEIS);
+        }
         return Ok(());
     };
     let st = ablauf::new_state(setup);
@@ -78,7 +88,10 @@ pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
     modul_aus_hash(&st, &root);
     // Rückkanal: wartende Nachrichten jetzt senden, danach alle zwei Minuten erneut versuchen
     let s2 = st.clone();
-    wasm_bindgen_futures::spawn_local(async move { ausgang::abschicken(&s2).await });
+    wasm_bindgen_futures::spawn_local(async move {
+        einladung::melden(&s2).await; // seit export 0.16.0: Einrichtung über eine Einladung
+        ausgang::abschicken(&s2).await
+    });
     let s3 = st.clone();
     let retry = Closure::<dyn FnMut()>::new(move || {
         let s4 = s3.clone();
