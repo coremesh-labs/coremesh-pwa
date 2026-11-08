@@ -131,6 +131,15 @@ pub struct Server {
     pub signatur: Vec<SrvSig>,
     #[serde(default)]
     pub rueckkanal: Option<Rueckkanal>,
+    /// Push-Benachrichtigungen (Web Push): öffentlicher VAPID-Schlüssel der Ablage; fehlt = ohne Push.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<Push>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Push {
+    /// P-256, unkomprimiert, base64url (applicationServerKey für pushManager.subscribe)
+    pub vapid: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

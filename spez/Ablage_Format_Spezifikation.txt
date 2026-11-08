@@ -178,6 +178,27 @@ Ablage_Explorer_Modul_Konzept.txt. Was hier steht, ist verbindlich; „muss“ h
     nur zur Kontrolle sichtbar. Verarbeitet wird nach dem Zeitstempel, je Objekt (bezug.art + id)
     eine eigene Warteschlange: scheitert eine Nachricht, warten die späteren desselben Objekts,
     die übrigen laufen weiter (Wiederholung mit wachsendem Abstand, dann „angehalten“).
+    Nachrichten der App selbst (seit 2026.11.05-82): "modul": "app", nur Arten der Hülle
+    (PUSH_ABO); der Server nimmt sie nur an, wenn die Art im Katalog „Von der App selbst“ ist,
+    und prüft dann kein Modul-Manifest.
+
+  5.6 Push-Benachrichtigungen (Web Push, seit 2026.11.05-82; RFC 8030/8291/8292)
+    Startdatei: "server": {…, "push": {"vapid": "<P-256 unkomprimiert, base64url>"}} – fehlt es,
+    bietet die Ablage kein Push an (z. B. ohne https-Adresse).
+    Anmelden: Hat der Nutzer Benachrichtigungen erlaubt, holt die Hülle mit pushManager.subscribe
+    (userVisibleOnly, applicationServerKey = vapid) die Push-Adresse und sendet sie einmal:
+      {"art": "PUSH_ABO", "modul": "app", "daten": {"abo": {"endpoint": "https://…",
+       "keys": {"p256dh": "…", "auth": "…"}}}}     (abo null = abmelden)
+    Erneut nur, wenn sich Adresse oder Schlüssel ändern. Der Server speichert sie am Gerät.
+    Für Fachmodule (Server): Das Objekt-JSON (Sichtart: Objektdaten = Object.Aktion) darf neben
+      content_type, name, data … ein Feld "meldungen": [{"id", "titel", "text"}] liefern. Der
+      Export merkt sich die Kennungen je Dataset; erscheint eine neue (nicht beim ersten Abbild),
+      schickt er sie nach dem Veröffentlichen an alle aktiven Geräte mit Zugriff auf das Dataset.
+      Je Sichtart abschaltbar (Push-Meldungen). Beispiel: Process.exportNotices (je Aushang).
+    Inhalt (aes128gcm, für das Gerät verschlüsselt; der Push-Dienst sieht ihn nicht):
+      {"titel": "Neuer Aushang: …", "text": "…", "modul": "<Modul der Sichtart>", "id": "<Kennung>"}
+    Der Service Worker zeigt ihn als Benachrichtigung; Antippen öffnet ./#m=<modul>.
+    Der Worker der Ablage ist für Push nicht beteiligt (nur für die Anmeldung über r/).
 
 6. Einrichtungslink
   https://<Adresse der PWA>/#cm1:<base64url ohne „=“ von JSON>

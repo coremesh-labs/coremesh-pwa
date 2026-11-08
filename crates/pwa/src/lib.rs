@@ -344,7 +344,38 @@ async fn melden_pruefen(st: Shared, root: HtmlElement) {
     melden_js("zaehler", &JsValue::from_f64(gesamt as f64));
     melden_js("melde", &JsValue::from_str(&serde_json::Value::Array(liste).to_string()));
     melden_js("beobachten", &JsValue::from_str(&serde_json::Value::Array(beobachten).to_string()));
+    push_anmelden(&st).await;
     PRUEFT.with(|p| *p.borrow_mut() = false);
+}
+
+/// Push-Anmeldung (Web Push): Bietet die Ablage Push an (server.push.vapid) und hat der Nutzer
+/// Benachrichtigungen erlaubt, meldet die App die Push-Adresse des Browsers einmal an den Server
+/// (PUSH_ABO über den Rückkanal) – erneut nur, wenn sie sich ändert. Für alle Module gleich:
+/// was gemeldet wird, entscheidet der Server (Meldungen der Fachmodule je Dataset).
+async fn push_anmelden(st: &Shared) {
+    const GESENDET: &str = "cm1.push.abo";
+    let vapid = st.borrow().start.as_ref().and_then(|s| s.server.push.as_ref()).map(|p| p.vapid.clone()).unwrap_or_default();
+    if vapid.is_empty() {
+        return;
+    }
+    let Some(p) = melden_js_wert("abo", &JsValue::from_str(&vapid)) else { return };
+    let Ok(v) = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(&p)).await else { return };
+    let abo = v.as_string().unwrap_or_default();
+    if abo.is_empty() {
+        return; // nicht erlaubt bzw. nicht unterstützt
+    }
+    let merk = format!("{vapid}|{abo}");
+    let store = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
+    if store.as_ref().and_then(|s| s.get_item(GESENDET).ok().flatten()).as_deref() == Some(merk.as_str()) {
+        return;
+    }
+    let Ok(abo_v) = serde_json::from_str::<serde_json::Value>(&abo) else { return };
+    let ein = serde_json::json!({"daten": {"abo": abo_v}});
+    if ausgang::senden(st, ausgang::APP, "PUSH_ABO", &ein).await.is_ok() {
+        if let Some(s) = store {
+            let _ = s.set_item(GESENDET, &merk);
+        }
+    }
 }
 
 /// Zahl „n neu“ an der Kachel des Moduls.
@@ -360,6 +391,14 @@ fn kachel_zahl(root: &HtmlElement, id: &str, n: u32) {
     } else {
         tile.set_class_name(&cls);
     }
+}
+
+/// wie melden_js, mit Ergebnis (z. B. Promise).
+fn melden_js_wert(f: &str, arg: &JsValue) -> Option<JsValue> {
+    let w = web_sys::window()?;
+    let m = js_sys::Reflect::get(&w, &"cm1Melden".into()).ok().filter(|m| !m.is_undefined())?;
+    let func = js_sys::Reflect::get(&m, &JsValue::from_str(f)).ok()?.dyn_into::<js_sys::Function>().ok()?;
+    func.call1(&m, arg).ok()
 }
 
 /// window.cm1Melden.<f>(arg) aus web/melden.js (fehlt es, passiert nichts).
