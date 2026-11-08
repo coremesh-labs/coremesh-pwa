@@ -5,6 +5,10 @@
 // Im Hintergrund (App geschlossen): Periodic Background Sync (Chrome, installierte App) – der
 // Service Worker vergleicht die Indexdateien i/<Dataset> der meldenden Module (ohne Schlüssel,
 // nur die Prüfsumme) und meldet „Neues“. Was genau neu ist, zeigt die App beim Öffnen.
+//
+// Push (Web Push, wenn die Ablage es anbietet): Die Hülle meldet die Push-Adresse des Browsers
+// beim Server an (abo). Der Server schickt Meldungen der Fachmodule direkt über den Push-Dienst
+// des Browsers; der Service Worker zeigt sie auch bei geschlossener App (sw.js, Ereignis push).
 
 const GEMELDET = 'cm1.gemeldet'; // schon benachrichtigt (Kennungen)
 
@@ -30,12 +34,25 @@ async function hintergrund() {
   } catch { /* nicht unterstützt */ }
 }
 
+function b64url(s) {
+  const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4));
+  return Uint8Array.from(b, (c) => c.charCodeAt(0));
+}
+function gleich(buf, bytes) {
+  if (!buf) return false;
+  const a = new Uint8Array(buf);
+  return a.length === bytes.length && a.every((x, i) => x === bytes[i]);
+}
+
 window.cm1Melden = {
   // Erlaubnis erfragen (nur nach Antippen), danach Prüfung im Hintergrund anmelden.
   async anfragen() {
     if (!('Notification' in window)) return 'unsupported';
     const r = await Notification.requestPermission();
-    if (r === 'granted') await hintergrund();
+    if (r === 'granted') {
+      await hintergrund();
+      window.dispatchEvent(new Event('cm1-gelesen')); // Hülle prüft und meldet Push an
+    }
     return r;
   },
   // Ein Modul hat Neues als gelesen markiert: die Hülle frischt Kachel und Zähler auf.
@@ -65,6 +82,7 @@ window.cm1Melden = {
     }
     schreib(GEMELDET, jetzt); // nur aktuelle behalten
     if (!frisch.length || !('Notification' in window) || Notification.permission !== 'granted') return;
+    if (document.visibilityState === 'visible') return; // App ist offen: die Hinweise stehen dort
     const reg = await registrierung();
     if (!reg) return;
     const erster = frisch[0];
@@ -74,6 +92,24 @@ window.cm1Melden = {
       body: text, tag: 'cm1-' + erster.modul, renotify: true, icon: 'icon.svg', badge: 'icon.svg',
       vibrate: [200, 100, 200], data: { modul: erster.modul },
     });
+  },
+  // Push-Adresse des Browsers für den VAPID-Schlüssel der Ablage (JSON) bzw. '' ohne Erlaubnis.
+  async abo(vapid) {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return '';
+    const reg = await registrierung();
+    if (!reg || !reg.pushManager) return '';
+    try {
+      const key = b64url(vapid);
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && !gleich(sub.options && sub.options.applicationServerKey, key)) {
+        await sub.unsubscribe(); // neuer Schlüssel der Ablage
+        sub = null;
+      }
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      return JSON.stringify(sub.toJSON());
+    } catch {
+      return '';
+    }
   },
   // Indexdateien der meldenden Module: der Service Worker merkt sich den jetzigen Stand
   // (die App hat ihn gesehen) und meldet im Hintergrund nur Änderungen danach.

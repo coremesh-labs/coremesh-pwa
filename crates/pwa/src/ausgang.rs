@@ -40,6 +40,11 @@ pub struct Eintrag {
     pub datei: String,
 }
 
+/// Absender „app“: Nachrichten der Hülle selbst (Server: Nachrichtenart mit „Von der App selbst“).
+pub const APP: &str = "app";
+/// Nachrichtenarten, die die Hülle selbst sendet.
+pub const APP_ARTEN: [&str; 1] = ["PUSH_ABO"];
+
 /// Nachricht bauen. `id`: zufällig (base64url), `jetzt`: ISO-Zeit.
 pub fn baue(
     start: &Start,
@@ -62,11 +67,18 @@ pub fn baue(
         .as_ref()
         .and_then(|g| g.signatur.as_ref())
         .ok_or("Gerät ohne Signaturschlüssel – App neu laden")?;
-    let entry = modules
-        .and_then(|m| m.module.iter().find(|e| e.id == modul))
-        .ok_or("Modul nicht in der Modulliste")?;
-    if !entry.rueckkanal.iter().any(|a| a == art) {
-        return Err(format!("Modul {modul} darf {art} nicht senden"));
+    if modul == APP {
+        // Nachrichten der App selbst (ohne Modul), z. B. Push-Anmeldung
+        if !APP_ARTEN.contains(&art) {
+            return Err(format!("Die App sendet {art} nicht selbst"));
+        }
+    } else {
+        let entry = modules
+            .and_then(|m| m.module.iter().find(|e| e.id == modul))
+            .ok_or("Modul nicht in der Modulliste")?;
+        if !entry.rueckkanal.iter().any(|a| a == art) {
+            return Err(format!("Modul {modul} darf {art} nicht senden"));
+        }
     }
     let bezug = eingabe.get("bezug").cloned().unwrap_or(Value::Null);
     if let Some(ds) = bezug.get("dataset").and_then(Value::as_str) {
@@ -199,6 +211,10 @@ mod tests {
         assert!(baue(&start, Some(&mods), &ds, "vorgang", "FOTO", &ein, "x", "t").is_err());
         let fremd = serde_json::json!({"bezug": {"dataset": "ds9"}});
         assert!(baue(&start, Some(&mods), &ds, "vorgang", "VORGANG_ANMERKUNG", &fremd, "x", "t").is_err());
+        // Nachrichten der App selbst: nur die eigenen Arten (Push-Anmeldung)
+        let abo = serde_json::json!({"daten": {"abo": {"endpoint": "https://push.example/x"}}});
+        assert!(baue(&start, Some(&mods), &ds, APP, "PUSH_ABO", &abo, "y", "t").is_ok());
+        assert!(baue(&start, Some(&mods), &ds, APP, "VORGANG_ANMERKUNG", &abo, "y", "t").is_err());
     }
 
     #[test]

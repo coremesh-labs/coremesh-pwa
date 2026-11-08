@@ -2,7 +2,7 @@
 // Regeln (Ablage_Format_Spezifikation.txt, 1): i/ nie aus dem Zwischenspeicher; o/ und m/ sind
 // unveränderlich (Pfad = SHA-256) und werden dauerhaft gespeichert; die Hülle selbst: Netz zuerst.
 
-const SHELL_CACHE = 'ablage-shell-v9';
+const SHELL_CACHE = 'ablage-shell-v10';
 const WATCH_CACHE = 'ablage-melden-v1'; // beobachtete Indexdateien (melden.js)
 const DATA_CACHE = 'ablage-immutable-v1';
 // Dateien der Hülle: shell.json (schreibt scripts/build.sh), sonst das Nötigste.
@@ -130,6 +130,20 @@ async function pruefen() {
 
 self.addEventListener('periodicsync', (event) => {
   if (event.tag === 'cm1-pruefen') event.waitUntil(pruefen());
+});
+
+// Web Push vom Server (Meldung eines Fachmoduls, z. B. neuer Aushang): {titel, text, modul, id}.
+// Der Inhalt ist für dieses Gerät verschlüsselt; der Browser entschlüsselt ihn vor dem Ereignis.
+self.addEventListener('push', (event) => {
+  let m = {};
+  try { m = event.data ? event.data.json() : {}; } catch { m = { titel: event.data ? event.data.text() : '' }; }
+  const modul = m.modul || '';
+  event.waitUntil(
+    self.registration.showNotification(m.titel || 'Neues in der App', {
+      body: m.text || 'Tippen, um es in der App anzusehen.', tag: 'cm1-' + modul + (m.id ? '-' + m.id : ''), renotify: true,
+      icon: 'icon.svg', badge: 'icon.svg', vibrate: [200, 100, 200], data: { modul },
+    })
+  );
 });
 
 // Antippen: App nach vorn holen bzw. öffnen und das Modul zeigen (#m=<modul>).
