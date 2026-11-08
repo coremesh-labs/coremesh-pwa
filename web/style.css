@@ -120,6 +120,15 @@ label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .einladung .fehler { color: var(--warn); }
 .einladung .hinweis { margin-top: 12px; }
 
+/* PIN (export 0.17.0) */
+.pin form { display: grid; gap: 12px; margin: 16px 0; max-width: 22em; }
+.pin label { display: grid; gap: 4px; font-weight: 600; }
+.pin input { font: 600 1.4rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .3em; padding: 10px 12px;
+  border: 1px solid var(--line, #ccc); border-radius: var(--radius); }
+.pin button { padding: 10px 16px; }
+.pin .fehler { color: var(--warn); }
+.pin .hinweis { margin-top: 12px; }
+
 /* Explorer */
 .xf .toolbar { display: grid; gap: 10px; margin-bottom: 12px; }
 .xf .toolbar .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }

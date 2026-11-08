@@ -15,3 +15,15 @@ fn einladung_vom_server() {
     assert_eq!(l.ablage, "https://faust.local:8443/files/ablage/");
     assert_eq!(l.key.secret, "AGE-SECRET-KEY-1X");
 }
+
+#[test]
+fn pin_tresor() {
+    use cm1::crypto::{age_decrypt, age_decrypt_passphrase, age_encrypt, age_encrypt_passphrase, age_generate};
+    let (secret, public) = age_generate();
+    let wrapped = age_encrypt_passphrase("123456", secret.as_bytes(), 10).unwrap();
+    assert!(age_decrypt_passphrase("654321", &wrapped).is_err());
+    let back = String::from_utf8(age_decrypt_passphrase("123456", &wrapped).unwrap()).unwrap();
+    assert_eq!(back, secret);
+    let c = age_encrypt(&public, b"geheim").unwrap();
+    assert_eq!(age_decrypt(&back, &c).unwrap(), b"geheim");
+}

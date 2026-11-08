@@ -6,12 +6,14 @@ mod ausgang;
 mod einladung;
 mod module;
 mod net;
+mod tresor;
 
 use ablauf::Shared;
 use cm1::crypto::decode_b64url;
 use cm1::model::SetupLink;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlElement;
@@ -32,8 +34,28 @@ const SETUP_HINWEIS: &str = "<main class=\"einrichten\"><h1>Einrichtung nötig</
     <p>Öffnen Sie den Einladungslink aus Ihrer E-Mail bzw. Ihrem Brief (QR-Code) und geben Sie den Einladungscode ein. Danach erscheint hier Ihre Startseite.</p></main>";
 
 /// Einstieg: liest den Einrichtungslink (falls vorhanden), holt die Startdatei und zeigt die Startseite.
+/// Mit PIN-Tresor (export 0.17.0) zuerst die PIN – auch vor einer neuen Einladung.
 #[wasm_bindgen]
 pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
+    if tresor::gesperrt() {
+        tresor::abfragen(&root, "", weiter(&root));
+        return Ok(());
+    }
+    start(root).await
+}
+
+/// Nach der PIN (bzw. dem Festlegen) weiter mit dem Start.
+fn weiter(root: &HtmlElement) -> tresor::Weiter {
+    let r = root.clone();
+    Rc::new(move || {
+        let r = r.clone();
+        Box::pin(async move {
+            let _ = start(r).await;
+        })
+    })
+}
+
+async fn start(root: HtmlElement) -> Result<(), JsValue> {
     let hash = net::location_hash();
     if let Some(setup) = parse_setup_hash(&hash) {
         ablauf::save_setup(&setup);
@@ -56,6 +78,18 @@ pub async fn boot(root: HtmlElement) -> Result<(), JsValue> {
     root.set_inner_html("<main class=\"laden\"><p>Lade Startseite …</p></main>");
 
     ablauf::refresh_start(&st).await;
+    // PIN Pflicht (Rolle): Tresor anlegen, bevor die Startseite erscheint
+    let regeln = st.borrow().start.as_ref().and_then(|s| tresor::regeln_aus(&s.teilnehmer));
+    if let Some(r) = regeln {
+        if !tresor::vorhanden() {
+            tresor::festlegen(&root, r, "", weiter(&root));
+            return Ok(());
+        }
+        tresor::regeln_uebernehmen(&r);
+    }
+    if tresor::vorhanden() {
+        tresor::sperre_beobachten();
+    }
     ablauf::load_cached_indexes(&st);
     let datasets = st.borrow().start.as_ref().map(|s| s.datasets.clone()).unwrap_or_default();
     for ds in datasets {
@@ -378,16 +412,13 @@ async fn push_anmelden(st: &Shared) {
         return; // nicht erlaubt bzw. nicht unterstützt
     }
     let merk = format!("{vapid}|{abo}");
-    let store = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
-    if store.as_ref().and_then(|s| s.get_item(GESENDET).ok().flatten()).as_deref() == Some(merk.as_str()) {
+    if net::store_get(GESENDET).as_deref() == Some(merk.as_str()) {
         return;
     }
     let Ok(abo_v) = serde_json::from_str::<serde_json::Value>(&abo) else { return };
     let ein = serde_json::json!({"daten": {"abo": abo_v}});
     if ausgang::senden(st, ausgang::APP, "PUSH_ABO", &ein).await.is_ok() {
-        if let Some(s) = store {
-            let _ = s.set_item(GESENDET, &merk);
-        }
+        net::store_set(GESENDET, &merk);
     }
 }
 

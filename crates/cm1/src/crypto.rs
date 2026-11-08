@@ -101,6 +101,29 @@ pub fn age_decrypt_passphrase(passphrase: &str, cipher: &[u8]) -> Result<Vec<u8>
     Ok(out)
 }
 
+/// age-Verschlüsselung mit einer Passphrase (scrypt, Arbeitsfaktor 2^work) – PIN-Tresor der App.
+pub fn age_encrypt_passphrase(passphrase: &str, plain: &[u8], work: u8) -> Result<Vec<u8>> {
+    let mut rec = age::scrypt::Recipient::new(age::secrecy::SecretString::from(passphrase.to_string()));
+    rec.set_work_factor(work);
+    let encryptor = age::Encryptor::with_recipients(std::iter::once(&rec as &dyn age::Recipient))
+        .map_err(|e| crate::Error::new(ErrorCode::Key, format!("Verschlüsselung: {e}")))?;
+    let mut out = Vec::new();
+    let mut w = encryptor
+        .wrap_output(&mut out)
+        .map_err(|e| crate::Error::new(ErrorCode::Decrypt, format!("age: {e}")))?;
+    w.write_all(plain)
+        .and_then(|_| w.finish().map(|_| ()))
+        .map_err(|e| crate::Error::new(ErrorCode::Decrypt, format!("age schreiben: {e}")))?;
+    Ok(out)
+}
+
+/// Neuer age-Schlüssel: (geheim „AGE-SECRET-KEY-1…“, öffentlich „age1…“).
+pub fn age_generate() -> (String, String) {
+    use age::secrecy::ExposeSecret;
+    let id = age::x25519::Identity::generate();
+    (id.to_string().expose_secret().to_string(), id.to_public().to_string())
+}
+
 /// Einladungscode normalisieren: Großbuchstaben und Ziffern, ohne Trenner („7kq4-m9tx 2hpa“ → „7KQ4M9TX2HPA“).
 pub fn normalize_code(code: &str) -> String {
     code.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_uppercase()).collect()

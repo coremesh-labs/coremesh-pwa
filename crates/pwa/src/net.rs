@@ -60,12 +60,83 @@ fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok().flatten()
 }
 
-pub fn store_get(key: &str) -> Option<String> {
+// PIN-Tresor (export 0.17.0, tresor.rs): Ist ein Tresor angelegt, stehen die geschützten Einträge
+// (Einrichtung mit dem privaten Schlüssel, Startdatei mit den Schlüsseln, Indizes, Ausgang,
+// Speicher der Module, offene Einladung) nur verschlüsselt im Speicher des Browsers:
+// „cmT1:“ + base64url(age(gzip(Wert))) an den öffentlichen Schlüssel des Tresors. Schreiben
+// geht immer, Lesen nur mit dem geheimen Schlüssel – den gibt es nur im Arbeitsspeicher, nach
+// Eingabe der PIN.
+thread_local! {
+    static TRESOR_PUBLIC: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    static TRESOR_SECRET: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+const VERSCHLUESSELT: &str = "cmT1:";
+
+/// Geschützte Einträge: alles der Hülle und der Module außer dem Tresor selbst und den
+/// Kennungen, die melden.js ohne Schlüssel liest.
+pub fn geschuetzt(key: &str) -> bool {
+    (key.starts_with("cm1.") || key.starts_with("mod.") || key.starts_with("cmE.")) && key != "cm1.gemeldet"
+}
+
+pub fn tresor_setzen(public: Option<String>, secret: Option<String>) {
+    TRESOR_PUBLIC.with(|p| *p.borrow_mut() = public);
+    TRESOR_SECRET.with(|p| *p.borrow_mut() = secret);
+}
+
+pub fn tresor_offen() -> bool {
+    TRESOR_SECRET.with(|p| p.borrow().is_some())
+}
+
+pub fn store_get_raw(key: &str) -> Option<String> {
     storage()?.get_item(key).ok().flatten()
 }
 
-pub fn store_set(key: &str, value: &str) -> bool {
+pub fn store_set_raw(key: &str, value: &str) -> bool {
     storage().map(|s| s.set_item(key, value).is_ok()).unwrap_or(false)
+}
+
+pub fn store_get(key: &str) -> Option<String> {
+    let raw = store_get_raw(key)?;
+    let Some(enc) = raw.strip_prefix(VERSCHLUESSELT) else { return Some(raw) };
+    let secret = TRESOR_SECRET.with(|p| p.borrow().clone())?;
+    let cipher = cm1::crypto::decode_b64url(enc).ok()?;
+    let packed = cm1::crypto::age_decrypt(&secret, &cipher).ok()?;
+    let plain = cm1::crypto::gunzip(&packed).ok()?;
+    String::from_utf8(plain).ok()
+}
+
+pub fn store_set(key: &str, value: &str) -> bool {
+    let public = TRESOR_PUBLIC.with(|p| p.borrow().clone());
+    match public {
+        Some(public) if geschuetzt(key) => {
+            let Ok(packed) = cm1::crypto::gzip(value.as_bytes()) else { return false };
+            let Ok(cipher) = cm1::crypto::age_encrypt(&public, &packed) else { return false };
+            store_set_raw(key, &format!("{VERSCHLUESSELT}{}", cm1::crypto::encode_b64url(&cipher)))
+        }
+        _ => store_set_raw(key, value),
+    }
+}
+
+/// Alle Schlüssel des Speichers.
+pub fn store_keys() -> Vec<String> {
+    let Some(s) = storage() else { return Vec::new() };
+    let n = s.length().unwrap_or(0);
+    (0..n).filter_map(|i| s.key(i).ok().flatten()).collect()
+}
+
+/// Geschützte Einträge, die noch offen im Speicher stehen, verschlüsseln (nach dem Anlegen des Tresors).
+pub fn store_versiegeln() {
+    for k in store_keys() {
+        if !geschuetzt(&k) {
+            continue;
+        }
+        if let Some(v) = store_get_raw(&k) {
+            if !v.starts_with(VERSCHLUESSELT) {
+                store_set(&k, &v);
+            }
+        }
+    }
 }
 
 /// Entfernt alle Einträge, deren Schlüssel mit `prefix` beginnt.
